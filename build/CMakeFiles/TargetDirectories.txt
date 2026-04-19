@@ -1,6 +1,0 @@
-/Users/yusuf_taha/projects/EdgeStorage/build/CMakeFiles/edgestorage.dir
-/Users/yusuf_taha/projects/EdgeStorage/build/CMakeFiles/edgestorage_example.dir
-/Users/yusuf_taha/projects/EdgeStorage/build/CMakeFiles/edgestorage_smoke_test.dir
-/Users/yusuf_taha/projects/EdgeStorage/build/CMakeFiles/test.dir
-/Users/yusuf_taha/projects/EdgeStorage/build/CMakeFiles/edit_cache.dir
-/Users/yusuf_taha/projects/EdgeStorage/build/CMakeFiles/rebuild_cache.dir

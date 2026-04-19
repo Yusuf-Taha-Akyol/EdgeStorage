@@ -51,5 +51,26 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
+# Build output
+/build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+
+# Test output
+Testing/
+
+# Executables
+edgestorage_example
+edgestorage_smoke_test
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
 # debug information files
 *.dwo

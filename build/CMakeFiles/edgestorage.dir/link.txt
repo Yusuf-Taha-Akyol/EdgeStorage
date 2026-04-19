@@ -1,2 +1,0 @@
-/usr/bin/ar qc libedgestorage.a CMakeFiles/edgestorage.dir/src/api/edgestorage.c.o
-/usr/bin/ranlib libedgestorage.a
