@@ -1,4 +1,4 @@
-#include "include/edgestorage/edgestorage.h"
+#include "edgestorage/edgestorage.h"
 
 #include <stdlib.h>
 
@@ -24,13 +24,13 @@ void es_close(es_engine_t* engine) {
     free(engine);
 }
 
-es_status_t es_register_stream(
+es_status_t es_register_stream_schema(
     es_engine_t* engine,
-    const es_stream_def_t* def,
+    const es_stream_schema_t* schema,
     uint32_t* out_stream_id
 ) {
     (void)engine;
-    (void)def;
+    (void)schema;
 
     if(!out_stream_id) {
         return ES_ERR_INVALID_ARG;
@@ -42,9 +42,11 @@ es_status_t es_register_stream(
 
 es_status_t es_write_record(
     es_engine_t* engine,
+    uint32_t stream_id,
     const es_record_t* record
 ) {
     (void)engine;
+    (void)stream_id;
     (void)record;
 
     return ES_OK;
@@ -52,12 +54,15 @@ es_status_t es_write_record(
 
 es_status_t es_write_batch (
     es_engine_t* engine,
+    uint32_t stream_id,
     const es_record_t* records,
     size_t count
 ) {
     (void) engine;
+    (void) stream_id;
     (void) records;
     (void) count;
+
     return ES_OK;
 }
 

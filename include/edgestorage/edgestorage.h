@@ -20,12 +20,24 @@ typedef enum {
 } es_status_t;
 
 typedef enum {
-    ES_TYPE_I64 = 0,
-    ES_TYPE_U64 = 1,
-    ES_TYPE_F32 = 2,
-    ES_TYPE_F64 = 3,
-    ES_TYPE_BOOL = 4
+    ES_TYPE_U8 = 1,
+    ES_TYPE_U16 = 2,
+    ES_TYPE_U32 = 3,
+    ES_TYPE_U64 = 4,
+    ES_TYPE_I32 = 5,
+    ES_TYPE_I64 = 6,
+    ES_TYPE_F32 = 7,
+    ES_TYPE_F64 = 8,
+    ES_TYPE_BOOL = 9,
 } es_value_type_t;
+
+typedef enum {
+    ES_COMP_NONE = 0,
+    ES_COMP_DELTA = 1,
+    ES_COMP_DELTA_DELTA = 2,
+    ES_COMP_XOR = 3,
+    ES_COMP_FOR = 4,
+} es_comp_hint_t;
 
 typedef struct {
     const char* storage_path;
@@ -38,37 +50,41 @@ typedef struct {
     uint16_t field_id;
     const char* name;
     es_value_type_t type;
+    es_comp_hint_t comp_hint;
 } es_field_def_t;
 
 typedef struct {
+    uint16_t record_type_id;
+    const char* record_name;
+    uint16_t field_count;
+    const es_field_def_t* fields;
+    uint32_t payload_size;
+} es_record_type_def_t;
+
+typedef struct {
     const char* stream_name;
-    uint16_t field_count;
-    es_field_def_t* fields;
-} es_stream_def_t;
+    uint32_t schema_version;
+    uint16_t record_type_count;
+    const es_record_type_def_t* record_types;
+} es_stream_schema_t;
 
 typedef struct {
-    uint16_t field_id;
-    es_value_type_t type;
-    union {
-        int64_t i64;
-        uint64_t u64;
-        float f32;
-        double f64;
-        uint8_t boolean;
-    } value;
-} es_field_t;
-
-typedef struct {
-    uint64_t timestamp;
-    uint32_t stream_id;
-    uint16_t field_count;
-    es_field_t* fields;
+    uint64_t timestamp_ns;
+    uint16_t record_type_id;
+    uint16_t flags;
+    uint32_t payload_size;
+    const void* payload;
 } es_record_t;
 
+/*
+ * record_type_id == 0 -> all record types
+ * record_type_id != 0 -> filter by that record type
+ */
 typedef struct {
-    uint64_t stream_id;
-    uint64_t start_ts;
-    uint64_t end_ts;
+    uint32_t stream_id;
+    uint64_t start_ts_ns;
+    uint64_t end_ts_ns;
+    uint16_t record_type_id;
     size_t limit;
 } es_query_t;
 
@@ -80,19 +96,21 @@ typedef struct {
 es_engine_t* es_open(const es_config_t* config);
 void es_close(es_engine_t* engine);
 
-es_status_t es_register_stream(
+es_status_t es_register_stream_schema(
     es_engine_t* engine,
-    const es_stream_def_t* def,
+    const es_stream_schema_t* schema,
     uint32_t* out_stream_id
 );
 
 es_status_t es_write_record(
     es_engine_t* engine, 
+    uint32_t stream_id,
     const es_record_t* record
 );
 
 es_status_t es_write_batch(
     es_engine_t* engine,
+    uint32_t stream_id, 
     const es_record_t* records,
     size_t count
 );

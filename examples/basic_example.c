@@ -1,4 +1,4 @@
-#include "include/edgestorage/edgestorage.h"
+#include "edgestorage/edgestorage.h"
 
 #include <stdio.h>
 
