@@ -30,6 +30,60 @@ es_status_t es_register_stream(
     uint32_t* out_stream_id
 ) {
     (void)engine;
-    (void)record;
+    (void)def;
+
+    if(!out_stream_id) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    *out_stream_id = 1;
     return ES_OK;
+}
+
+es_status_t es_write_record(
+    es_engine_t* engine,
+    const es_record_t* record
+) {
+    (void)engine;
+    (void)record;
+
+    return ES_OK;
+}
+
+es_status_t es_write_batch (
+    es_engine_t* engine,
+    const es_record_t* records,
+    size_t count
+) {
+    (void) engine;
+    (void) records;
+    (void) count;
+    return ES_OK;
+}
+
+es_status_t es_query_range (
+    es_engine_t* engine,
+    const es_query_t* query,
+    es_result_t* out_result
+) {
+    (void) engine;
+    (void) query;
+
+    if(!out_result) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    out_result->records = NULL;
+    out_result->count = 0;
+    return ES_OK;
+}
+
+void es_result_free(es_result_t* result) {
+    if(!result) {
+        return;
+    }
+
+    free(result->records);
+    result->records = NULL;
+    result->count = 0;
 }
