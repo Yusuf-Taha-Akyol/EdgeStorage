@@ -1,4 +1,4 @@
-#include "/Users/yusuf_taha/projects/EdgeStorage/include/edgestorage/edgestorage.h"
+#include "include/edgestorage/edgestorage.h"
 
 int main(void) {
     es_config_t config = {
