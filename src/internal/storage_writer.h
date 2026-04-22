@@ -22,6 +22,11 @@ es_status_t es_storage_writer_register_stream(
     uint32_t stream_id
 );
 
+es_stream_storage_state_t* es_storage_writer_find_stream_state(
+    es_engine_t* engine,
+    uint32_t stream_id
+);
+
 es_status_t es_storage_writer_append_record(
     es_engine_t* engine,
     uint32_t stream_id,
