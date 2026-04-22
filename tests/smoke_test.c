@@ -11,6 +11,15 @@ static int path_exists(const char* path) {
     return stat(path, &st) == 0;
 }
 
+static long path_file_size(const char* path) {
+    struct stat st;
+    if(stat(path, &st) != 0) {
+        return -1;
+    }
+
+    return (long)st.st_size;
+}
+
 static es_field_def_t test_fields[] = {
     {
         .field_id = 1,
@@ -124,6 +133,16 @@ int main(void) {
     }
 
     if(expect_status(es_write_record(engine, stream_id, &test_record), ES_OK) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(!path_exists("./testdata/stream_1/segment_000001.seg")) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(path_file_size("./testdata/stream_1/segment_000001.seg") <= 0) {
         es_close(engine);
         return 1;
     }
