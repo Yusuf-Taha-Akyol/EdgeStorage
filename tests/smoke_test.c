@@ -1,5 +1,51 @@
 #include "edgestorage/edgestorage.h"
 
+static int expect_status(es_status_t actual, es_status_t expected) {
+    return actual == expected ? 0 : 1;
+}
+
+static es_field_def_t test_fields[] = {
+    {
+        .field_id = 1,
+        .name = "value",
+        .type = ES_TYPE_F32,
+        .comp_hint = ES_COMP_NONE
+    }
+};
+
+static es_record_type_def_t test_record_types[] = {
+    {
+        .record_type_id = 1,
+        .record_name = "imu",
+        .field_count = 1,
+        .fields = test_fields,
+        .payload_size = sizeof(float)
+    }
+};
+
+static es_stream_schema_t test_schema = {
+    .stream_name = "telemetry",
+    .schema_version = 1,
+    .record_type_count = 1,
+    .record_types = test_record_types
+};
+
+static es_stream_schema_t invalid_schema = {
+  .stream_name = "invalid",
+  .schema_version = 1,
+  .record_type_count = 0,
+  .record_types = test_record_types  
+};
+
+static float test_value = 42.0f;
+static es_record_t test_record = {
+    .timestamp_ns = 0,
+    .record_type_id = 1,
+    .flags = 0,
+    .payload_size = sizeof(float),
+    .payload = &test_value
+};
+
 int main(void) {
     es_config_t config = {
         .storage_path = "./testdata",
@@ -8,8 +54,103 @@ int main(void) {
         .compression_enabled = 1
     };
 
+    es_config_t invalid_config = {
+        .storage_path = NULL,
+        .segment_size_bytes = 0,
+        .write_buffer_size_bytes = 4096,
+        .compression_enabled = 1
+    };
+
+    if(es_open(&invalid_config) != NULL) {
+        return 1;
+    }
+
     es_engine_t* engine = es_open(&config);
     if(!engine) {
+        return 1;
+    }
+
+    uint32_t stream_id = 0;
+    if(expect_status(es_register_stream_schema(engine, &test_schema, &stream_id), ES_OK) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(expect_status(es_write_record(engine, 0, &test_record), ES_ERR_INVALID_ARG) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(expect_status(es_write_record(engine, stream_id, NULL), ES_ERR_INVALID_ARG) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(expect_status(es_write_batch(engine, stream_id, &test_record, 0), ES_ERR_INVALID_ARG) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(expect_status(es_write_batch(engine, 0, &test_record, 1), ES_ERR_INVALID_ARG) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(expect_status(es_write_record(engine, stream_id, &test_record), ES_OK) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(expect_status(es_write_batch(engine, stream_id, &test_record, 1), ES_OK) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    es_query_t invalid_query = {
+        .stream_id = 0,
+        .start_ts_ns = 0,
+        .end_ts_ns = 1000,
+        .record_type_id = 0,
+        .limit = 10
+    };
+
+    es_result_t result = {0};
+
+    if(expect_status(es_query_range(engine, &invalid_query, &result), ES_ERR_INVALID_ARG) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(expect_status(es_query_range(engine, NULL, &result), ES_ERR_INVALID_ARG) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(expect_status(es_query_range(engine, &invalid_query, NULL), ES_ERR_INVALID_ARG) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    es_query_t valid_query = {
+        .stream_id = stream_id,
+        .start_ts_ns = 0,
+        .end_ts_ns = 1000,
+        .record_type_id = 0,
+        .limit = 10
+    };
+
+    if(expect_status(es_query_range(engine, &valid_query, &result), ES_OK) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(stream_id == 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(expect_status(es_register_stream_schema(engine, &invalid_schema, &stream_id), ES_ERR_INVALID_ARG) != 0) {
+        es_close(engine);
         return 1;
     }
 
