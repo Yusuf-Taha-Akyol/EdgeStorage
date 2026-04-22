@@ -7,11 +7,15 @@
 #include "stddef.h"
 #include "stdint.h"
 
+#define ES_STORAGE_PATH_MAX 512
+
 typedef struct {
     uint32_t stream_id;
     uint32_t active_segment_index;
     size_t active_segment_size_bytes;
     FILE* active_segment_file;
+    char stream_dir_path[ES_STORAGE_PATH_MAX];
+    char active_segment_path[ES_STORAGE_PATH_MAX];
 } es_stream_storage_state_t;
 
 es_status_t es_storage_writer_init(es_engine_t* engine);

@@ -1,7 +1,14 @@
 #include "edgestorage/edgestorage.h"
+#include <sys/stat.h>
+
 
 static int expect_status(es_status_t actual, es_status_t expected) {
     return actual == expected ? 0 : 1;
+}
+
+static int path_exists(const char* path) {
+    struct stat st;
+    return stat(path, &st) == 0;
 }
 
 static es_field_def_t test_fields[] = {
@@ -72,6 +79,16 @@ int main(void) {
 
     uint32_t stream_id = 0;
     if(expect_status(es_register_stream_schema(engine, &test_schema, &stream_id), ES_OK) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(!path_exists("./testdata")) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(!path_exists("./testdata/stream_1")) {
         es_close(engine);
         return 1;
     }
