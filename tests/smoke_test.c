@@ -65,7 +65,7 @@ static es_record_t test_record = {
 int main(void) {
     es_config_t config = {
         .storage_path = "./testdata",
-        .segment_size_bytes = 1024 * 1024,
+        .segment_size_bytes = 32,
         .write_buffer_size_bytes = 4096,
         .compression_enabled = 1
     };
@@ -148,6 +148,16 @@ int main(void) {
     }
 
     if(expect_status(es_write_batch(engine, stream_id, &test_record, 1), ES_OK) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(!path_exists("./testdata/stream_1/segment_000002.seg")) {    
+        es_close(engine);
+        return 1;
+    }
+
+    if((path_file_size("./testdata/stream_1/segment_000002.seg")) <= 0) {
         es_close(engine);
         return 1;
     }

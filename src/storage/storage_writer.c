@@ -121,6 +121,45 @@ static es_status_t es_storage_writer_open_active_segment(
     return ES_OK;
 }
 
+static void es_storage_writer_close_active_segment(
+    es_stream_storage_state_t* state
+) {
+    if(!state) {
+        return;
+    }
+
+    if(state->active_segment_file) {
+        fclose(state->active_segment_file);
+        state->active_segment_file = NULL;
+    }
+}
+
+static es_status_t es_storage_writer_rollover_segment(
+    es_stream_storage_state_t* state
+) {
+    if(!state) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    es_storage_writer_close_active_segment(state);
+
+    state->active_segment_index++;
+    state->active_segment_size_bytes = 0;
+
+    es_status_t status = es_storage_writer_build_segment_path(
+        state->stream_dir_path,
+        state->active_segment_index,
+        state->active_segment_path,
+        sizeof(state->active_segment_path)
+    );
+
+    if(status != ES_OK) {
+        return status;
+    }
+
+    return ES_OK;
+}
+
 static size_t es_storage_writer_record_encoded_size(const es_record_t* record) {
     if(!record) {
         return 0;
@@ -131,6 +170,25 @@ static size_t es_storage_writer_record_encoded_size(const es_record_t* record) {
         + sizeof(record->flags)
         + sizeof(record->payload_size)
         + record->payload_size;
+}
+
+static es_status_t es_storage_writer_prepare_for_append(
+    const es_engine_t* engine,
+    es_stream_storage_state_t* state,
+    const es_record_t* record
+) {
+    if(!engine || !state || !record) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    size_t record_size = es_storage_writer_record_encoded_size(record);
+
+    if(state->active_segment_size_bytes > 0 &&
+       state->active_segment_size_bytes + record_size > engine->config.segment_size_bytes) {
+        return es_storage_writer_rollover_segment(state);
+       }
+
+    return ES_OK;
 }
 
 static es_status_t es_storage_writer_write_record_bytes(
@@ -193,10 +251,7 @@ void es_storage_writer_shutdown(es_engine_t* engine) {
     }
 
     for(size_t i = 0; i < engine->stream_storage_count; ++i) {
-        if(engine->stream_storage_states[i].active_segment_file) {
-            fclose(engine->stream_storage_states[i].active_segment_file);
-            engine->stream_storage_states[i].active_segment_file = NULL;
-        }
+        es_storage_writer_close_active_segment(&engine->stream_storage_states[i]);
     }
 
     free(engine->stream_storage_states);
@@ -297,12 +352,18 @@ es_status_t es_storage_writer_append_record(
         return ES_ERR_NOT_FOUND;
     }
 
-    es_status_t status = es_storage_writer_open_active_segment(state);
+    es_status_t status = es_storage_writer_prepare_for_append(engine, state, record);
+    if(status != ES_OK) {
+        return ES_OK;
+    }
+
+    status = es_storage_writer_open_active_segment(state);
     if(status != ES_OK) {
         return status;
     }
 
     status = es_storage_writer_write_record_bytes(state->active_segment_file, record);
+
     if(status != ES_OK) {
         return status;
     }
