@@ -11,7 +11,9 @@ struct es_engine {
     es_config_t config;
     es_engine_state_t state;
     uint32_t next_stream_id;
+    uint32_t* registered_stream_ids;
     size_t registered_stream_count;
+    size_t registered_stream_capacity;
 };
 
 static int es_is_valid_schema(const es_stream_schema_t* schema) {
@@ -42,6 +44,45 @@ static int es_is_valid_schema(const es_stream_schema_t* schema) {
     return 1;
 }
 
+static int es_is_registered_stream_id(const es_engine_t* engine, uint32_t stream_id) {
+    if(!engine || stream_id == 0) {
+        return 0;
+    }
+
+    for(size_t i = 0; i < engine->registered_stream_count; ++i) {
+        if(engine->registered_stream_ids[i] == stream_id) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static es_status_t es_ensure_stream_capacity(es_engine_t* engine) {
+    if(!engine) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    if(engine->registered_stream_count < engine->registered_stream_capacity) {
+        return ES_OK;
+    }
+
+    size_t new_capacity = engine->registered_stream_capacity == 0 ? 4 : engine->registered_stream_capacity * 2;
+    uint32_t* new_ids = (uint32_t*)realloc(
+        engine->registered_stream_ids,
+        new_capacity * sizeof(uint32_t)
+    );
+
+    if(!new_ids) {
+        return ES_ERR_OOM;
+    } 
+
+    engine->registered_stream_ids = new_ids;
+    engine->registered_stream_capacity = new_capacity;
+
+    return ES_OK;
+}
+
 es_engine_t* es_open(const es_config_t* config) {
     if(!config || !config->storage_path) {
         return NULL;
@@ -59,7 +100,9 @@ es_engine_t* es_open(const es_config_t* config) {
     engine->config = *config;
     engine->state = ES_ENGINE_STATE_OPEN;
     engine->next_stream_id = 1;
+    engine->registered_stream_ids = NULL;
     engine->registered_stream_count = 0;
+    engine->registered_stream_capacity = 0;
     return engine;
 }
 
@@ -69,6 +112,10 @@ void es_close(es_engine_t* engine) {
     }
 
     engine->state = ES_ENGINE_STATE_CLOSED;
+    free(engine->registered_stream_ids);
+    engine->registered_stream_ids = NULL;
+    engine->registered_stream_count = 0;
+    engine->registered_stream_capacity = 0;
     free(engine);
 }
 
@@ -89,7 +136,13 @@ es_status_t es_register_stream_schema(
         return ES_ERR_INVALID_ARG;
     }
 
+    es_status_t status = es_ensure_stream_capacity(engine);
+    if(status != ES_OK) {
+        return status;
+    }
+
     *out_stream_id = engine->next_stream_id;
+    engine->registered_stream_ids[engine->registered_stream_count] = *out_stream_id;
     engine->next_stream_id++;
     engine->registered_stream_count++;
 
@@ -109,6 +162,10 @@ es_status_t es_write_record(
         return ES_ERR_INTERNAL;
     }
 
+    if(!es_is_registered_stream_id(engine, stream_id)) {
+        return ES_ERR_NOT_FOUND;
+    }
+
     return ES_OK;
 }
 
@@ -124,6 +181,10 @@ es_status_t es_write_batch(
 
     if(engine->state != ES_ENGINE_STATE_OPEN) {
         return ES_ERR_INTERNAL;
+    }
+
+    if(!es_is_registered_stream_id(engine, stream_id)) {
+        return ES_ERR_NOT_FOUND;
     }
 
     return ES_OK;
@@ -144,6 +205,10 @@ es_status_t es_query_range(
 
     if(query->stream_id == 0) {
         return ES_ERR_INVALID_ARG;
+    }
+
+    if(!es_is_registered_stream_id(engine, query->stream_id)) {
+        return ES_ERR_NOT_FOUND;
     }
 
     out_result->records = NULL;

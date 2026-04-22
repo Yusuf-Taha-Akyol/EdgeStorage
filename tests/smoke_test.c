@@ -81,6 +81,11 @@ int main(void) {
         return 1;
     }
 
+    if(expect_status(es_write_record(engine, 9999, &test_record), ES_ERR_NOT_FOUND) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
     if(expect_status(es_write_record(engine, stream_id, NULL), ES_ERR_INVALID_ARG) != 0) {
         es_close(engine);
         return 1;
@@ -92,6 +97,11 @@ int main(void) {
     }
 
     if(expect_status(es_write_batch(engine, 0, &test_record, 1), ES_ERR_INVALID_ARG) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(expect_status(es_write_batch(engine, 9999, &test_record, 1), ES_ERR_NOT_FOUND) != 0) {
         es_close(engine);
         return 1;
     }
@@ -127,6 +137,19 @@ int main(void) {
     }
 
     if(expect_status(es_query_range(engine, &invalid_query, NULL), ES_ERR_INVALID_ARG) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    es_query_t missing_stream_query = {
+        .stream_id = 9999,
+        .start_ts_ns = 0,
+        .end_ts_ns = 1000,
+        .record_type_id = 0,
+        .limit = 10
+    };
+
+    if(expect_status(es_query_range(engine, &missing_stream_query, &result), ES_ERR_NOT_FOUND) != 0) {
         es_close(engine);
         return 1;
     }
