@@ -12,11 +12,15 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(edgestorage
     src/api/edgestorage.c
+    src/core/runtime.c
+    src/core/stream_registry.c
 )
 
 target_include_directories(edgestorage
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/internal
 )
 
 add_executable(edgestorage_example
