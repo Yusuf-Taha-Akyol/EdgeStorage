@@ -2,6 +2,8 @@
 #define ES_INTERNAL_RUNTIME_H
 
 #include "edgestorage/edgestorage.h"
+#include "storage_writer.h"
+
 
 typedef enum {
     ES_ENGINE_STATE_OPEN = 1,
@@ -15,6 +17,10 @@ struct es_engine {
     uint32_t* registered_stream_ids;
     size_t registered_stream_count;
     size_t registered_stream_capacity;
+
+    es_stream_storage_state_t* stream_storage_states;
+    size_t stream_storage_count;
+    size_t stream_storage_capacity;
 };
 
 es_engine_t* es_runtime_create(const es_config_t* config);

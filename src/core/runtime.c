@@ -1,4 +1,6 @@
 #include "runtime.h"
+#include "storage_writer.h"
+
 
 #include <stdlib.h>
 
@@ -23,6 +25,15 @@ es_engine_t* es_runtime_create(const es_config_t* config) {
     engine->registered_stream_count = 0;
     engine->registered_stream_capacity = 0;
 
+    engine->stream_storage_states = NULL;
+    engine->stream_storage_count = 0;
+    engine->stream_storage_capacity = 0;
+
+    if(es_storage_writer_init(engine) != ES_OK) {
+        free(engine);
+        return NULL;
+    }
+
     return engine;
 }
 
@@ -32,6 +43,7 @@ void es_runtime_destroy(es_engine_t* engine) {
     }
 
     engine->state = ES_ENGINE_STATE_CLOSED;
+    es_storage_writer_shutdown(engine);
     free(engine->registered_stream_ids);
     engine->registered_stream_ids = NULL;
     engine->registered_stream_count = 0;

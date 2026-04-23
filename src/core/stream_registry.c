@@ -1,5 +1,7 @@
 #include "stream_registry.h"
 #include "runtime.h"
+#include "storage_writer.h"
+
 
 #include <stdlib.h>
 
@@ -78,6 +80,13 @@ es_status_t es_stream_registry_register(
     engine->registered_stream_ids[engine->registered_stream_count] = *out_stream_id;
     engine->next_stream_id++;
     engine->registered_stream_count++;
+
+    es_status_t storage_status = es_storage_writer_register_stream(engine, *out_stream_id);
+    if(storage_status != ES_OK) {
+        engine->next_stream_id--;
+        engine->registered_stream_count--;
+        return storage_status;
+    }
 
     return ES_OK;
 }

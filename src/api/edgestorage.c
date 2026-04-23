@@ -1,6 +1,7 @@
 #include "edgestorage/edgestorage.h"
 #include "runtime.h"
 #include "stream_registry.h"
+#include "storage_writer.h"
 
 #include <stdlib.h>
 
@@ -45,7 +46,7 @@ es_status_t es_write_record(
         return ES_ERR_NOT_FOUND;
     }
 
-    return ES_OK;
+    return es_storage_writer_append_record(engine, stream_id, record);
 }
 
 es_status_t es_write_batch(
@@ -66,7 +67,7 @@ es_status_t es_write_batch(
         return ES_ERR_NOT_FOUND;
     }
 
-    return ES_OK;
+    return es_storage_writer_append_batch(engine, stream_id, records, count);
 }
 
 es_status_t es_query_range(
