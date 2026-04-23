@@ -172,6 +172,24 @@ static size_t es_storage_writer_record_encoded_size(const es_record_t* record) {
         + record->payload_size;
 }
 
+static es_status_t es_storage_writer_validate_record(
+    const es_record_t* record
+) {
+    if(!record) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    if(record->record_type_id == 0) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    if(record->payload_size > 0 && !record->payload) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    return ES_OK;
+}
+
 static es_status_t es_storage_writer_prepare_for_append(
     const es_engine_t* engine,
     es_stream_storage_state_t* state,
@@ -345,6 +363,11 @@ es_status_t es_storage_writer_append_record(
         return ES_ERR_INVALID_ARG;
     }
 
+    es_status_t validation_status = es_storage_writer_validate_record(record);
+    if(validation_status != ES_OK) {
+        return validation_status;
+    }
+
     es_stream_storage_state_t* state = 
         es_storage_writer_find_stream_state(engine, stream_id);
 
@@ -354,7 +377,7 @@ es_status_t es_storage_writer_append_record(
 
     es_status_t status = es_storage_writer_prepare_for_append(engine, state, record);
     if(status != ES_OK) {
-        return ES_OK;
+        return status;
     }
 
     status = es_storage_writer_open_active_segment(state);
@@ -384,6 +407,15 @@ es_status_t es_storage_writer_append_batch(
 ) {
     if(!engine || stream_id == 0 || !records || count == 0) {
         return ES_ERR_INVALID_ARG;
+    }
+
+    for(size_t i = 0; i < count; ++i) {
+        es_status_t validation_status = 
+            es_storage_writer_validate_record(&records[i]);
+
+        if(validation_status != ES_OK) {
+            return validation_status;
+        }
     }
 
     for(size_t i = 0; i < count; ++i) {
