@@ -43,3 +43,13 @@ target_link_libraries(edgestorage_smoke_test
 )
 
 add_test(NAME edgestorage_smoke_test COMMAND edgestorage_smoke_test)
+
+add_executable(edgestorage_storage_flow_test
+    tests/storage_flow_test.c
+)
+
+target_link_libraries(edgestorage_storage_flow_test
+    PRIVATE edgestorage
+)
+
+add_test(NAME edgestorage_storage_flow_test COMMAND edgestorage_storage_flow_test)
