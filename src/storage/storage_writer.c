@@ -220,7 +220,9 @@ static es_status_t es_storage_writer_prepare_for_append(
         return ES_ERR_INVALID_ARG;
     }
 
-    size_t record_size = es_storage_writer_record_encoded_size(record);
+    size_t record_size = engine->config.compression_enabled
+        ? es_storage_writer_record_delta_encoded_size(state, record)
+        : es_storage_writer_record_encoded_size(record);
 
     if(state->active_segment_size_bytes > 0 &&
        state->active_segment_size_bytes + record_size > engine->config.segment_size_bytes) {
