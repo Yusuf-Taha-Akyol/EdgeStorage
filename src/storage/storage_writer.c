@@ -269,6 +269,63 @@ static es_status_t es_storage_writer_write_record_bytes(
     return ES_OK;
 }
 
+static es_status_t es_storage_writer_write_delta_record_bytes(
+    FILE* file,
+    es_stream_storage_state_t* state,
+    const es_record_t* record
+) {
+    if(!file || !state || !record) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    if(state->has_last_timestamp) {
+        if(record->timestamp_ns < state->last_timestamp_ns) {
+            return ES_ERR_INVALID_ARG;
+        }
+
+        uint64_t delta_ns_64 = record->timestamp_ns - state->last_timestamp_ns;
+        if(delta_ns_64 > UINT32_MAX) {
+            return ES_ERR_INVALID_ARG;
+        }
+
+        uint32_t delta_ns = (uint32_t) delta_ns_64;
+        if(fwrite(&delta_ns, sizeof(delta_ns), 1, file ) != 1) {
+            return ES_ERR_IO;
+        }
+    } else {
+        if(fwrite(&record->timestamp_ns, sizeof(record->timestamp_ns), 1, file) != 1) {
+            return ES_ERR_IO;
+        }
+    }
+
+    if(fwrite(&record->record_type_id, sizeof(record->record_type_id), 1, file) != 1) {
+        return ES_ERR_IO;
+    }
+
+    if(fwrite(&record->flags, sizeof(record->flags), 1, file) != 1) {
+        return ES_ERR_IO;
+    }
+
+    if(fwrite(&record->payload_size, sizeof(record->payload_size), 1, file) != 1) {
+        return ES_ERR_IO;
+    }
+
+    if(record->payload_size > 0) {
+        if(!record->payload) {
+            return ES_ERR_INVALID_ARG;
+        }
+
+        if(fwrite(record->payload, 1, record->payload_size, file) != record->payload_size) {
+            return ES_ERR_IO;
+        }
+    }
+
+    state->last_timestamp_ns = record->timestamp_ns;
+    state->has_last_timestamp = 1;
+
+    return ES_OK;
+}
+
 es_status_t es_storage_writer_init(es_engine_t* engine) {
     if(!engine) {
         return ES_ERR_INVALID_ARG;
