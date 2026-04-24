@@ -13,6 +13,10 @@ typedef struct {
     uint32_t stream_id;
     uint32_t active_segment_index;
     size_t active_segment_size_bytes;
+
+    uint64_t last_timestamp_ns;
+    int has_last_timestamp;
+    
     FILE* active_segment_file;
     char stream_dir_path[ES_STORAGE_PATH_MAX];
     char active_segment_path[ES_STORAGE_PATH_MAX];

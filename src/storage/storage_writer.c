@@ -145,6 +145,8 @@ static es_status_t es_storage_writer_rollover_segment(
 
     state->active_segment_index++;
     state->active_segment_size_bytes = 0;
+    state->last_timestamp_ns = 0;
+    state->has_last_timestamp = 0;
 
     es_status_t status = es_storage_writer_build_segment_path(
         state->stream_dir_path,
@@ -318,6 +320,8 @@ es_status_t es_storage_writer_register_stream(
     state->stream_id = stream_id;
     state->active_segment_index = 1;
     state->active_segment_size_bytes = 0;
+    state->last_timestamp_ns = 0;
+    state->has_last_timestamp = 0;
     state->active_segment_file = NULL;
     state->stream_dir_path[0] = '\0';
     state->active_segment_path[0] = '\0';
