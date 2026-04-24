@@ -174,6 +174,25 @@ static size_t es_storage_writer_record_encoded_size(const es_record_t* record) {
         + record->payload_size;
 }
 
+static size_t es_storage_writer_record_delta_encoded_size(
+    const es_stream_storage_state_t* state,
+    const es_record_t* record
+) {
+    if(!state || !record) {
+        return 0;
+    }
+
+    size_t timestamp_size = state->has_last_timestamp
+        ? sizeof(uint32_t)
+        : sizeof(record->timestamp_ns);
+
+    return timestamp_size
+        + sizeof(record->record_type_id)
+        + sizeof(record->flags)
+        + sizeof(record->payload_size)
+        + record->payload_size;
+}
+
 static es_status_t es_storage_writer_validate_record(
     const es_record_t* record
 ) {
