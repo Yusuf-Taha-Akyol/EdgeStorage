@@ -462,12 +462,27 @@ es_status_t es_storage_writer_append_record(
         return status;
     }
 
+    size_t written_size = engine->config.compression_enabled
+        ? es_storage_writer_record_delta_encoded_size(state,record)
+        : es_storage_writer_record_encoded_size(record);
+
     status = es_storage_writer_open_active_segment(state);
     if(status != ES_OK) {
         return status;
     }
 
-    status = es_storage_writer_write_record_bytes(state->active_segment_file, record);
+    if(engine->config.compression_enabled) {
+        status = es_storage_writer_write_delta_record_bytes(
+            state->active_segment_file,
+            state,
+            record
+        );
+    } else {
+        status = es_storage_writer_write_record_bytes(
+            state->active_segment_file,
+            record
+        );
+    }
 
     if(status != ES_OK) {
         return status;
@@ -477,7 +492,7 @@ es_status_t es_storage_writer_append_record(
         return ES_ERR_IO;
     }
 
-    state->active_segment_size_bytes += es_storage_writer_record_encoded_size(record);
+    state->active_segment_size_bytes += written_size;
     return ES_OK;
 }
 
