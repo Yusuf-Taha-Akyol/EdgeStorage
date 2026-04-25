@@ -371,8 +371,138 @@ int main(void) {
     }
 
     es_result_free(&limited_result);
-    
     es_close(multisegment_engine);
+
+        system("rm -rf ./read_query_compressed_testdata");
+
+    es_config_t compressed_config = {
+        .storage_path = "./read_query_compressed_testdata",
+        .segment_size_bytes = 4096,
+        .write_buffer_size_bytes = 4096,
+        .compression_enabled = 1
+    };
+
+    es_engine_t* compressed_engine = es_open(&compressed_config);
+    if(!compressed_engine) {
+        printf("FAILED: compressed es_open returned NULL\n");
+        return 1;
+    }
+
+    uint32_t compressed_stream_id = 0;
+    if(expect_status(
+        es_register_stream_schema(compressed_engine, &schema, &compressed_stream_id),
+        ES_OK,
+        "register compressed stream"
+    ) != 0) {
+        es_close(compressed_engine);
+        return 1;
+    }
+
+    counter_payload_t compressed_payloads[3] = {
+        { .value = 1000 },
+        { .value = 2000 },
+        { .value = 3000 }
+    };
+
+    es_record_t compressed_records[3] = {
+        {
+            .timestamp_ns = 1000000000ULL,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &compressed_payloads[0]
+        },
+        {
+            .timestamp_ns = 1001000000ULL,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &compressed_payloads[1]
+        },
+        {
+            .timestamp_ns = 1002000000ULL,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &compressed_payloads[2]
+        }
+    };
+
+    if(expect_status(
+        es_write_batch(compressed_engine, compressed_stream_id, compressed_records, 3),
+        ES_OK,
+        "write compressed batch"
+    ) != 0) {
+        es_close(compressed_engine);
+        return 1;
+    }
+
+    es_query_t compressed_query = {
+        .stream_id = compressed_stream_id,
+        .start_ts_ns = 1000500000ULL,
+        .end_ts_ns = 1002000000ULL,
+        .record_type_id = 1,
+        .limit = 0
+    };
+
+    es_result_t compressed_result = {0};
+
+    if(expect_status(
+        es_query_range(compressed_engine, &compressed_query, &compressed_result),
+        ES_OK,
+        "compressed query range"
+    ) != 0) {
+        es_close(compressed_engine);
+        return 1;
+    }
+
+    if(expect_size(compressed_result.count, 2, "compressed query result count") != 0) {
+        es_result_free(&compressed_result);
+        es_close(compressed_engine);
+        return 1;
+    }
+
+    if(compressed_result.records[0].timestamp_ns != 1001000000ULL) {
+        printf(
+            "FAILED: compressed first timestamp expected=%llu actual=%llu\n",
+            1001000000ULL,
+            (unsigned long long)compressed_result.records[0].timestamp_ns
+        );
+        es_result_free(&compressed_result);
+        es_close(compressed_engine);
+        return 1;
+    }
+
+    if(compressed_result.records[1].timestamp_ns != 1002000000ULL) {
+        printf(
+            "FAILED: compressed second timestamp expected=%llu actual=%llu\n",
+            1002000000ULL,
+            (unsigned long long)compressed_result.records[1].timestamp_ns
+        );
+        es_result_free(&compressed_result);
+        es_close(compressed_engine);
+        return 1;
+    }
+
+    counter_payload_t* compressed_first_payload =
+        (counter_payload_t*)compressed_result.records[0].payload;
+    counter_payload_t* compressed_second_payload =
+        (counter_payload_t*)compressed_result.records[1].payload;
+
+    if(expect_u32(compressed_first_payload->value, 2000, "compressed first payload") != 0) {
+        es_result_free(&compressed_result);
+        es_close(compressed_engine);
+        return 1;
+    }
+
+    if(expect_u32(compressed_second_payload->value, 3000, "compressed second payload") != 0) {
+        es_result_free(&compressed_result);
+        es_close(compressed_engine);
+        return 1;
+    }
+
+    es_result_free(&compressed_result);
+    es_close(compressed_engine);
 
     printf("read_query_test passed\n");
     return 0;
