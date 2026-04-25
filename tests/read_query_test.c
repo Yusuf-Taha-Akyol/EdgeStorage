@@ -504,6 +504,186 @@ int main(void) {
     es_result_free(&compressed_result);
     es_close(compressed_engine);
 
+    system("rm -rf ./read_query_compressed_rollover_testdata");
+
+    es_config_t compressed_rollover_config = {
+        .storage_path = "./read_query_compressed_rollover_testdata",
+        .segment_size_bytes = 40,
+        .write_buffer_size_bytes = 4096,
+        .compression_enabled = 1
+    };
+
+    es_engine_t* compressed_rollover_engine = es_open(&compressed_rollover_config);
+    if(!compressed_rollover_engine) {
+        printf("FAILED: compressed rollover es_open returned NULL\n");
+        return 1;
+    }
+
+    uint32_t compressed_rollover_stream_id = 0;
+    if(expect_status(
+        es_register_stream_schema(
+            compressed_rollover_engine,
+            &schema,
+            &compressed_rollover_stream_id
+        ),
+        ES_OK,
+        "register compressed rollover stream"
+    ) != 0) {
+        es_close(compressed_rollover_engine);
+        return 1;
+    }
+
+    counter_payload_t compressed_rollover_payloads[3] = {
+        { .value = 4000},
+        { .value = 5000},
+        { .value = 6000}
+    };
+
+    es_record_t compressed_rollover_records[3] = {
+        {
+            .timestamp_ns = 2000000000ULL,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &compressed_rollover_payloads[0]
+        },
+        {
+            .timestamp_ns = 2001000000ULL,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &compressed_rollover_payloads[1]
+        },
+        {
+            .timestamp_ns = 2002000000ULL,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &compressed_rollover_payloads[2]
+        }
+    };
+
+    if(expect_status(
+        es_write_batch(
+            compressed_rollover_engine,
+            compressed_rollover_stream_id,
+            compressed_rollover_records,
+            3
+        ),
+        ES_OK,
+        "write compressed rollover batch"
+    ) != 0) {
+        es_close(compressed_rollover_engine);
+        return 1;
+    }
+
+    es_query_t compressed_rollover_query = {
+        .stream_id = compressed_rollover_stream_id,
+        .start_ts_ns = 2000000000ULL,
+        .end_ts_ns = 2002000000ULL,
+        .record_type_id = 1,
+        .limit = 0
+    };
+
+    es_result_t compressed_rollover_result = {0};
+
+    if(expect_status(
+        es_query_range(
+            compressed_rollover_engine,
+            &compressed_rollover_query,
+            &compressed_rollover_result
+        ),
+        ES_OK,
+        "compressed rollover query range"
+    ) != 0) {
+        es_close(compressed_rollover_engine);
+        return 1;
+    }
+
+    if(expect_size(
+        compressed_rollover_result.count,
+        3,
+        "compressed rollover query result count"
+    ) != 0) {
+        es_result_free(&compressed_rollover_result);
+        es_close(compressed_rollover_engine);
+        return 1;
+    }
+
+    if(compressed_rollover_result.records[0].timestamp_ns != 2000000000ULL) {
+        printf(
+            "FAILED: compressed rollover first timestamp expected=%llu actual=%llu\n",
+            2000000000ULL,
+            (unsigned long long)compressed_rollover_result.records[0].timestamp_ns
+        );
+        es_result_free(&compressed_rollover_result);
+        es_close(compressed_rollover_engine);
+
+        return 1;
+    }
+
+    if(compressed_rollover_result.records[1].timestamp_ns != 2001000000ULL) {
+        printf(
+            "FAILED: compressed rollover second timestamp expected=%llu actual=%llu\n",
+            2001000000ULL,
+            (unsigned long long)compressed_rollover_result.records[1].timestamp_ns
+        );
+        es_result_free(&compressed_rollover_result);
+        es_close(compressed_rollover_engine);
+        return 1;
+    }
+
+    if(compressed_rollover_result.records[2].timestamp_ns != 2002000000ULL) {
+        printf(
+            "FAILED: compressed rollover third timestamp expected=%llu actual=%llu\n",
+            2002000000ULL,
+            (unsigned long long)compressed_rollover_result.records[2].timestamp_ns
+        );
+        es_result_free(&compressed_rollover_result);
+        es_close(compressed_rollover_engine);
+        return 1;
+    }
+
+    counter_payload_t* compressed_rollover_first_payload = 
+        (counter_payload_t*)compressed_rollover_result.records[0].payload;
+    counter_payload_t* compressed_rollover_second_payload = 
+        (counter_payload_t*)compressed_rollover_result.records[1].payload;
+    counter_payload_t* compressed_rollover_third_payload =
+        (counter_payload_t*)compressed_rollover_result.records[2].payload;
+
+    if(expect_u32(
+        compressed_rollover_first_payload->value,
+        4000,
+        "compressed rollover first payload"
+    ) != 0) {
+        es_result_free(&compressed_rollover_result);
+        es_close(compressed_rollover_engine);
+        return 1;
+    }
+
+    if(expect_u32(
+        compressed_rollover_second_payload->value,
+        5000,
+        "compressed rollover second payload"
+    ) != 0) {
+        es_result_free(&compressed_rollover_result);
+        es_close(compressed_rollover_engine);
+        return 1;
+    }
+
+    if(expect_u32(
+        compressed_rollover_third_payload->value,
+        6000,
+        "compressed rollover third payload"
+    ) != 0) {
+        es_result_free(&compressed_rollover_result);
+        es_close(compressed_rollover_engine);
+        return 1;
+    }
+
+    es_result_free(&compressed_rollover_result);
+    es_close(compressed_rollover_engine);
+
     printf("read_query_test passed\n");
     return 0;
 }
