@@ -101,12 +101,41 @@ Out of scope for the current version:
 
 Goal: support basic retrieval
 
-Tasks:
+Current status:
 
-- read stored records back
-- filter by stream
-- filter by time range
-- support minimal result handling
+- Basic read/query path is implemented.
+- `es_query_range()` now returns real records from stored segment files.
+- Stream-based reads are supported through stream-specific segment directories.
+- Time range filtering is supported.
+- Optional `record_type_id` filtering is supported.
+- `record_type_id == 0` returns all record types.
+- Query result limiting is supported through `limit`.
+- Multi-segment linear scan is supported.
+- Uncompressed segment reads are supported.
+- Timestamp-delta compressed segment reads are supported.
+- Segment rollover resets timestamp decode state correctly.
+- Query result payload ownership is handled through `es_result_free()`.
+
+In scope for the current version:
+
+- linear scan based read/query path
+- stream-based record retrieval
+- time range filtering
+- record type filtering
+- result limit handling
+- uncompressed record decoding
+- timestamp delta decompression
+- multi-segment read tests
+
+Out of scope for the current version:
+
+- indexing
+- SQL-like query language
+- aggregations
+- field-level filtering
+- production-grade corrupted segment recovery
+- advanced compression formats
+- query optimization
 
 ## Phase 7: Benchmarks
 
