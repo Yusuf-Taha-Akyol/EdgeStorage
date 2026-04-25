@@ -53,3 +53,13 @@ target_link_libraries(edgestorage_storage_flow_test
 )
 
 add_test(NAME edgestorage_storage_flow_test COMMAND edgestorage_storage_flow_test)
+
+add_executable(edgestorage_compression_delta_test
+    tests/compression_delta_test.c
+)
+
+target_link_libraries(edgestorage_compression_delta_test
+    PRIVATE edgestorage
+)
+
+add_test(NAME edgestorage_compression_delta_test COMMAND edgestorage_compression_delta_test)

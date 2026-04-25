@@ -145,6 +145,8 @@ static es_status_t es_storage_writer_rollover_segment(
 
     state->active_segment_index++;
     state->active_segment_size_bytes = 0;
+    state->last_timestamp_ns = 0;
+    state->has_last_timestamp = 0;
 
     es_status_t status = es_storage_writer_build_segment_path(
         state->stream_dir_path,
@@ -166,6 +168,25 @@ static size_t es_storage_writer_record_encoded_size(const es_record_t* record) {
     }
 
     return sizeof(record->timestamp_ns)
+        + sizeof(record->record_type_id)
+        + sizeof(record->flags)
+        + sizeof(record->payload_size)
+        + record->payload_size;
+}
+
+static size_t es_storage_writer_record_delta_encoded_size(
+    const es_stream_storage_state_t* state,
+    const es_record_t* record
+) {
+    if(!state || !record) {
+        return 0;
+    }
+
+    size_t timestamp_size = state->has_last_timestamp
+        ? sizeof(uint32_t)
+        : sizeof(record->timestamp_ns);
+
+    return timestamp_size
         + sizeof(record->record_type_id)
         + sizeof(record->flags)
         + sizeof(record->payload_size)
@@ -199,7 +220,9 @@ static es_status_t es_storage_writer_prepare_for_append(
         return ES_ERR_INVALID_ARG;
     }
 
-    size_t record_size = es_storage_writer_record_encoded_size(record);
+    size_t record_size = engine->config.compression_enabled
+        ? es_storage_writer_record_delta_encoded_size(state, record)
+        : es_storage_writer_record_encoded_size(record);
 
     if(state->active_segment_size_bytes > 0 &&
        state->active_segment_size_bytes + record_size > engine->config.segment_size_bytes) {
@@ -242,6 +265,63 @@ static es_status_t es_storage_writer_write_record_bytes(
             return ES_ERR_IO;
         }
     }
+
+    return ES_OK;
+}
+
+static es_status_t es_storage_writer_write_delta_record_bytes(
+    FILE* file,
+    es_stream_storage_state_t* state,
+    const es_record_t* record
+) {
+    if(!file || !state || !record) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    if(state->has_last_timestamp) {
+        if(record->timestamp_ns < state->last_timestamp_ns) {
+            return ES_ERR_INVALID_ARG;
+        }
+
+        uint64_t delta_ns_64 = record->timestamp_ns - state->last_timestamp_ns;
+        if(delta_ns_64 > UINT32_MAX) {
+            return ES_ERR_INVALID_ARG;
+        }
+
+        uint32_t delta_ns = (uint32_t) delta_ns_64;
+        if(fwrite(&delta_ns, sizeof(delta_ns), 1, file ) != 1) {
+            return ES_ERR_IO;
+        }
+    } else {
+        if(fwrite(&record->timestamp_ns, sizeof(record->timestamp_ns), 1, file) != 1) {
+            return ES_ERR_IO;
+        }
+    }
+
+    if(fwrite(&record->record_type_id, sizeof(record->record_type_id), 1, file) != 1) {
+        return ES_ERR_IO;
+    }
+
+    if(fwrite(&record->flags, sizeof(record->flags), 1, file) != 1) {
+        return ES_ERR_IO;
+    }
+
+    if(fwrite(&record->payload_size, sizeof(record->payload_size), 1, file) != 1) {
+        return ES_ERR_IO;
+    }
+
+    if(record->payload_size > 0) {
+        if(!record->payload) {
+            return ES_ERR_INVALID_ARG;
+        }
+
+        if(fwrite(record->payload, 1, record->payload_size, file) != record->payload_size) {
+            return ES_ERR_IO;
+        }
+    }
+
+    state->last_timestamp_ns = record->timestamp_ns;
+    state->has_last_timestamp = 1;
 
     return ES_OK;
 }
@@ -318,6 +398,8 @@ es_status_t es_storage_writer_register_stream(
     state->stream_id = stream_id;
     state->active_segment_index = 1;
     state->active_segment_size_bytes = 0;
+    state->last_timestamp_ns = 0;
+    state->has_last_timestamp = 0;
     state->active_segment_file = NULL;
     state->stream_dir_path[0] = '\0';
     state->active_segment_path[0] = '\0';
@@ -380,12 +462,27 @@ es_status_t es_storage_writer_append_record(
         return status;
     }
 
+    size_t written_size = engine->config.compression_enabled
+        ? es_storage_writer_record_delta_encoded_size(state,record)
+        : es_storage_writer_record_encoded_size(record);
+
     status = es_storage_writer_open_active_segment(state);
     if(status != ES_OK) {
         return status;
     }
 
-    status = es_storage_writer_write_record_bytes(state->active_segment_file, record);
+    if(engine->config.compression_enabled) {
+        status = es_storage_writer_write_delta_record_bytes(
+            state->active_segment_file,
+            state,
+            record
+        );
+    } else {
+        status = es_storage_writer_write_record_bytes(
+            state->active_segment_file,
+            record
+        );
+    }
 
     if(status != ES_OK) {
         return status;
@@ -395,7 +492,7 @@ es_status_t es_storage_writer_append_record(
         return ES_ERR_IO;
     }
 
-    state->active_segment_size_bytes += es_storage_writer_record_encoded_size(record);
+    state->active_segment_size_bytes += written_size;
     return ES_OK;
 }
 
