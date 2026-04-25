@@ -1,6 +1,8 @@
 #include "edgestorage/edgestorage.h"
 #include <sys/stat.h>
 #include <stdio.h>
+#include <stdlib.h>
+
 
 static int fail_at(const char* label, es_engine_t* engine) {
     printf("FAILED AT: %s\n", label);
@@ -84,6 +86,8 @@ static es_record_t invalid_payload_record = {
 };
 
 int main(void) {
+    system("rm -rf ./testdata");
+
     es_config_t config = {
         .storage_path = "./testdata",
         .segment_size_bytes = 32,

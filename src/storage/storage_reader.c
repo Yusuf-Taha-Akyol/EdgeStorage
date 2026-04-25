@@ -108,6 +108,72 @@ static es_status_t es_storage_reader_read_uncompressed_record(
     return ES_OK;
 }
 
+static es_status_t es_storage_reader_read_compressed_record(
+    FILE* file,
+    es_record_t* out_record,
+    uint64_t* last_timestamp_ns,
+    int* has_last_timestamp
+) {
+    if(!file || !out_record || !last_timestamp_ns || !has_last_timestamp) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    memset(out_record, 0, sizeof(*out_record));
+
+    if(*has_last_timestamp) {
+        uint32_t delta_ns = 0;
+
+        if(fread(&delta_ns, sizeof(delta_ns), 1, file) != 1) {
+            if(feof(file)) {
+                return ES_ERR_NOT_FOUND;
+            }
+
+            return ES_ERR_IO;
+        }
+
+        out_record->timestamp_ns = *last_timestamp_ns + delta_ns;
+    } else {
+        if(fread(&out_record->timestamp_ns, sizeof(out_record->timestamp_ns), 1, file) != 1) {
+            if(feof(file)) {
+                return ES_ERR_NOT_FOUND;
+            }
+
+            return ES_ERR_IO;
+        }
+    }
+
+    if(fread(&out_record->record_type_id, sizeof(out_record->record_type_id), 1, file) != 1) {
+        return ES_ERR_IO;
+    }
+
+    if(fread(&out_record->flags, sizeof(out_record->flags), 1, file) != 1) {
+        return ES_ERR_IO;
+    }
+
+    if(fread(&out_record->payload_size, sizeof(out_record->payload_size), 1, file) != 1) {
+        return ES_ERR_IO;
+    }
+
+    if(out_record->payload_size > 0) {
+        void* payload = malloc(out_record->payload_size);
+        if(!payload) {
+            return ES_ERR_OOM;
+        }
+
+        if(fread(payload, 1, out_record->payload_size, file) != out_record->payload_size) {
+            free(payload);
+            return ES_ERR_IO;
+        }
+
+        out_record->payload = payload;
+    }
+
+    *last_timestamp_ns = out_record->timestamp_ns;
+    *has_last_timestamp = 1;
+
+    return ES_OK;
+}
+
 static es_status_t es_storage_reader_append_result_record(
     es_result_t* result,
     const es_record_t* record
@@ -204,12 +270,22 @@ es_status_t es_storage_reader_query_range(
             return ES_ERR_IO;
         }
 
+        uint64_t last_timestamp_ns = 0;
+        int has_last_timestamp = 0;
+
         while(1) {
             es_record_t record;
-            es_status_t read_status = es_storage_reader_read_uncompressed_record(
-                file,
-                &record
-            );
+            es_status_t read_status = engine->config.compression_enabled
+                ? es_storage_reader_read_compressed_record(
+                    file,
+                    &record,
+                    &last_timestamp_ns,
+                    &has_last_timestamp
+                )
+                : es_storage_reader_read_uncompressed_record(
+                    file,
+                    &record
+                );
 
             if(read_status == ES_ERR_NOT_FOUND) {
                 break;
