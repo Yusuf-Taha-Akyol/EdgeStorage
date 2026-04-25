@@ -327,6 +327,51 @@ int main(void) {
     }
 
     es_result_free(&multisegment_result);
+
+        es_query_t limited_query = {
+        .stream_id = multisegment_stream_id,
+        .start_ts_ns = 1000,
+        .end_ts_ns = 3000,
+        .record_type_id = 1,
+        .limit = 2
+    };
+
+    es_result_t limited_result = {0};
+
+    if(expect_status(
+        es_query_range(multisegment_engine, &limited_query, &limited_result),
+        ES_OK,
+        "limited query range"
+    ) != 0) {
+        es_close(multisegment_engine);
+        return 1;
+    }
+
+    if(expect_size(limited_result.count, 2, "limited query result count") != 0) {
+        es_result_free(&limited_result);
+        es_close(multisegment_engine);
+        return 1;
+    }
+
+    counter_payload_t* limited_first_payload =
+        (counter_payload_t*)limited_result.records[0].payload;
+    counter_payload_t* limited_second_payload =
+        (counter_payload_t*)limited_result.records[1].payload;
+
+    if(expect_u32(limited_first_payload->value, 100, "limited first payload") != 0) {
+        es_result_free(&limited_result);
+        es_close(multisegment_engine);
+        return 1;
+    }
+
+    if(expect_u32(limited_second_payload->value, 200, "limited second payload") != 0) {
+        es_result_free(&limited_result);
+        es_close(multisegment_engine);
+        return 1;
+    }
+
+    es_result_free(&limited_result);
+    
     es_close(multisegment_engine);
 
     printf("read_query_test passed\n");
