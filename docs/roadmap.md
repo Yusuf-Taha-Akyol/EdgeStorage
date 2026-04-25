@@ -2,17 +2,25 @@
 
 ## Current Stage
 
-The project is currently in the skeleton and design phase.
+The project currently has a working append-only telemetry write path with initial timestamp delta compression support.
 
 What is already done:
 
 - repository created
 - initial README added
 - project folder structure created
-- CMake-based skeleton added
-- public API skeleton added
+- CMake-based build flow added
+- public C API skeleton added
 - example and smoke test added
-- MVP and architecture documents added
+- stream schema and record model foundation added
+- engine runtime lifecycle added
+- in-memory stream registration state added
+- append-only storage writer added
+- stream-based storage directories added
+- segment file rollover added
+- single and batch append paths added
+- timestamp delta compression write path added
+- compression-specific tests added
 
 ## Phase 1: Foundation
 
@@ -60,14 +68,34 @@ Tasks:
 
 ## Phase 5: Compression
 
-Goal: add first practical compression behavior
+Goal: add first practical compression behavior without breaking the append-only write path.
 
-Tasks:
+Current status:
 
-- implement delta encoding
-- implement delta-of-delta encoding where appropriate
-- measure compression effect on sample telemetry data
-- keep CPU and memory overhead low
+- Compression v1 is implemented for timestamp delta encoding.
+- Compression is enabled through `compression_enabled`.
+- The first record in a segment writes the full `timestamp_ns`.
+- Subsequent records in the same segment write a `uint32_t` timestamp delta.
+- Segment rollover resets timestamp delta state so each segment remains independently decodable.
+- Non-monotonic timestamps are rejected in the compressed write path.
+- Timestamp deltas larger than `UINT32_MAX` are rejected for now.
+
+In scope for the current version:
+
+- timestamp delta encoding
+- compressed write path
+- compressed segment size accounting
+- rollover behavior with compression enabled
+- compression-focused tests
+
+Out of scope for the current version:
+
+- read/query/decompression path
+- payload integer field compression
+- float/double compression
+- delta-of-delta encoding
+- frame-of-reference encoding
+- benchmarking
 
 ## Phase 6: Read Path
 
