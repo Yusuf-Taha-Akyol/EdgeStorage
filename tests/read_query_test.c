@@ -54,13 +54,20 @@ int main(void) {
             .field_count = 1,
             .fields = fields,
             .payload_size = sizeof(counter_payload_t)
+        },
+        {
+            .record_type_id = 2,
+            .record_name = "event_counter",
+            .field_count = 1,
+            .fields = fields,
+            .payload_size = sizeof(counter_payload_t)
         }
     };
 
     es_stream_schema_t schema = {
         .stream_name = "query_stream",
         .schema_version = 1,
-        .record_type_count = 1,
+        .record_type_count = 2,
         .record_types = record_types
     };
 
@@ -110,7 +117,7 @@ int main(void) {
         },
         {
             .timestamp_ns = 3000,
-            .record_type_id = 1,
+            .record_type_id = 2,
             .flags = 0,
             .payload_size = sizeof(counter_payload_t),
             .payload = &payloads[2]
@@ -145,22 +152,15 @@ int main(void) {
         return 1;
     }
 
-    if(expect_size(result.count, 2, "query result count") != 0) {
+    if(expect_size(result.count, 1, "query result count") != 0) {
         es_result_free(&result);
         es_close(engine);
         return 1;
     }
 
     counter_payload_t* first_payload = (counter_payload_t*)result.records[0].payload;
-    counter_payload_t* second_payload = (counter_payload_t*)result.records[1].payload;
 
     if(expect_u32(first_payload->value, 20, "first result payload") != 0) {
-        es_result_free(&result);
-        es_close(engine);
-        return 1;
-    }
-
-    if(expect_u32(second_payload->value, 30, "second result payload") != 0) {
         es_result_free(&result);
         es_close(engine);
         return 1;
