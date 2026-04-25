@@ -15,6 +15,7 @@ add_library(edgestorage
     src/core/runtime.c
     src/core/stream_registry.c
     src/storage/storage_writer.c
+    src/storage/storage_reader.c
 )
 
 target_include_directories(edgestorage

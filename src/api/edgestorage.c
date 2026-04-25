@@ -2,6 +2,7 @@
 #include "runtime.h"
 #include "stream_registry.h"
 #include "storage_writer.h"
+#include "storage_reader.h"
 
 #include <stdlib.h>
 
@@ -91,9 +92,7 @@ es_status_t es_query_range(
         return ES_ERR_NOT_FOUND;
     }
 
-    out_result->records = NULL;
-    out_result->count = 0;
-    return ES_OK;
+    return es_storage_reader_query_range(engine, query, out_result);
 }
 
 void es_result_free(es_result_t* result) {
