@@ -100,6 +100,14 @@ void es_result_free(es_result_t* result) {
         return;
     }
 
+    if(result->records) {
+        for(size_t i = 0; i < result->count; ++i) {
+            free((void*)result->records[i].payload);
+            result->records[i].payload = NULL;
+            result->records[i].payload_size = 0;
+        }
+    }
+
     free(result->records);
     result->records = NULL;
     result->count = 0;
