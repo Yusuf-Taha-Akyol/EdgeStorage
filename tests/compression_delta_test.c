@@ -212,6 +212,73 @@ int main(void) {
 
     es_close(invalid_engine);
 
+        system("rm -rf ./compression_delta_overflow_testdata");
+
+    es_config_t overflow_config = {
+        .storage_path = "./compression_delta_overflow_testdata",
+        .segment_size_bytes = 4096,
+        .write_buffer_size_bytes = 4096,
+        .compression_enabled = 1
+    };
+
+    es_engine_t* overflow_engine = es_open(&overflow_config);
+    if(!overflow_engine) {
+        printf("FAILED: overflow_engine es_open returned NULL\n");
+        return 1;
+    }
+
+    uint32_t overflow_stream_id = 0;
+    if(expect_status(
+        es_register_stream_schema(overflow_engine, &schema, &overflow_stream_id),
+        ES_OK,
+        "register overflow timestamp stream"
+    ) != 0) {
+        es_close(overflow_engine);
+        return 1;
+    }
+
+    counter_payload_t overflow_payloads[2] = {
+        { .value = 30 },
+        { .value = 31 }
+    };
+
+    es_record_t overflow_records[2] = {
+        {
+            .timestamp_ns = 1000000000ULL,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &overflow_payloads[0]
+        },
+        {
+            .timestamp_ns = 1000000000ULL + 4294967296ULL,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &overflow_payloads[1]
+        }
+    };
+
+    if(expect_status(
+        es_write_record(overflow_engine, overflow_stream_id, &overflow_records[0]),
+        ES_OK,
+        "write first overflow timestamp record"
+    ) != 0) {
+        es_close(overflow_engine);
+        return 1;
+    }
+
+    if(expect_status(
+        es_write_record(overflow_engine, overflow_stream_id, &overflow_records[1]),
+        ES_ERR_INVALID_ARG,
+        "reject timestamp delta overflow"
+    ) != 0) {
+        es_close(overflow_engine);
+        return 1;
+    }
+
+    es_close(overflow_engine);
+
     printf("compression_delta_test passed\n");
     return 0;
 }
