@@ -145,6 +145,73 @@ int main(void) {
         return 1;
     }
 
+        system("rm -rf ./compression_delta_invalid_testdata");
+
+    es_config_t invalid_config = {
+        .storage_path = "./compression_delta_invalid_testdata",
+        .segment_size_bytes = 4096,
+        .write_buffer_size_bytes = 4096,
+        .compression_enabled = 1
+    };
+
+    es_engine_t* invalid_engine = es_open(&invalid_config);
+    if(!invalid_engine) {
+        printf("FAILED: invalid_engine es_open returned NULL\n");
+        return 1;
+    }
+
+    uint32_t invalid_stream_id = 0;
+    if(expect_status(
+        es_register_stream_schema(invalid_engine, &schema, &invalid_stream_id),
+        ES_OK,
+        "register invalid timestamp stream"
+    ) != 0) {
+        es_close(invalid_engine);
+        return 1;
+    }
+
+    counter_payload_t invalid_payloads[2] = {
+        { .value = 20 },
+        { .value = 21 }
+    };
+
+    es_record_t invalid_records[2] = {
+        {
+            .timestamp_ns = 2000000000ULL,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &invalid_payloads[0]
+        },
+        {
+            .timestamp_ns = 1000000000ULL,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &invalid_payloads[1]
+        }
+    };
+
+    if(expect_status(
+        es_write_record(invalid_engine, invalid_stream_id, &invalid_records[0]),
+        ES_OK,
+        "write first invalid timestamp record"
+    ) != 0) {
+        es_close(invalid_engine);
+        return 1;
+    }
+
+    if(expect_status(
+        es_write_record(invalid_engine, invalid_stream_id, &invalid_records[1]),
+        ES_ERR_INVALID_ARG,
+        "reject non-monotonic timestamp"
+    ) != 0) {
+        es_close(invalid_engine);
+        return 1;
+    }
+
+    es_close(invalid_engine);
+
     printf("compression_delta_test passed\n");
     return 0;
 }
