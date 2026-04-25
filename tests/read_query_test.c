@@ -212,6 +212,123 @@ int main(void) {
     es_result_free(&all_types_result);
     es_close(engine);
 
+        system("rm -rf ./read_query_multisegment_testdata");
+
+    es_config_t multisegment_config = {
+        .storage_path = "./read_query_multisegment_testdata",
+        .segment_size_bytes = 40,
+        .write_buffer_size_bytes = 4096,
+        .compression_enabled = 0
+    };
+
+    es_engine_t* multisegment_engine = es_open(&multisegment_config);
+    if(!multisegment_engine) {
+        printf("FAILED: multisegment es_open returned NULL\n");
+        return 1;
+    }
+
+    uint32_t multisegment_stream_id = 0;
+    if(expect_status(
+        es_register_stream_schema(multisegment_engine, &schema, &multisegment_stream_id),
+        ES_OK,
+        "register multisegment stream"
+    ) != 0) {
+        es_close(multisegment_engine);
+        return 1;
+    }
+
+    counter_payload_t multisegment_payloads[3] = {
+        { .value = 100 },
+        { .value = 200 },
+        { .value = 300 }
+    };
+
+    es_record_t multisegment_records[3] = {
+        {
+            .timestamp_ns = 1000,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &multisegment_payloads[0]
+        },
+        {
+            .timestamp_ns = 2000,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &multisegment_payloads[1]
+        },
+        {
+            .timestamp_ns = 3000,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &multisegment_payloads[2]
+        }
+    };
+
+    if(expect_status(
+        es_write_batch(multisegment_engine, multisegment_stream_id, multisegment_records, 3),
+        ES_OK,
+        "write multisegment batch"
+    ) != 0) {
+        es_close(multisegment_engine);
+        return 1;
+    }
+
+    es_query_t multisegment_query = {
+        .stream_id = multisegment_stream_id,
+        .start_ts_ns = 1000,
+        .end_ts_ns = 3000,
+        .record_type_id = 1,
+        .limit = 0
+    };
+
+    es_result_t multisegment_result = {0};
+
+    if(expect_status(
+        es_query_range(multisegment_engine, &multisegment_query, &multisegment_result),
+        ES_OK,
+        "multisegment query range"
+    ) != 0) {
+        es_close(multisegment_engine);
+        return 1;
+    }
+
+    if(expect_size(multisegment_result.count, 3, "multisegment query result count") != 0) {
+        es_result_free(&multisegment_result);
+        es_close(multisegment_engine);
+        return 1;
+    }
+
+    counter_payload_t* multisegment_first_payload =
+        (counter_payload_t*)multisegment_result.records[0].payload;
+    counter_payload_t* multisegment_second_payload =
+        (counter_payload_t*)multisegment_result.records[1].payload;
+    counter_payload_t* multisegment_third_payload =
+        (counter_payload_t*)multisegment_result.records[2].payload;
+
+    if(expect_u32(multisegment_first_payload->value, 100, "multisegment first payload") != 0) {
+        es_result_free(&multisegment_result);
+        es_close(multisegment_engine);
+        return 1;
+    }
+
+    if(expect_u32(multisegment_second_payload->value, 200, "multisegment second payload") != 0) {
+        es_result_free(&multisegment_result);
+        es_close(multisegment_engine);
+        return 1;
+    }
+
+    if(expect_u32(multisegment_third_payload->value, 300, "multisegment third payload") != 0) {
+        es_result_free(&multisegment_result);
+        es_close(multisegment_engine);
+        return 1;
+    }
+
+    es_result_free(&multisegment_result);
+    es_close(multisegment_engine);
+
     printf("read_query_test passed\n");
     return 0;
 }
