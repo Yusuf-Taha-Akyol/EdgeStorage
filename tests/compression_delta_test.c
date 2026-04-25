@@ -279,6 +279,108 @@ int main(void) {
 
     es_close(overflow_engine);
 
+        system("rm -rf ./compression_delta_rollover_testdata");
+
+    es_config_t rollover_config = {
+        .storage_path = "./compression_delta_rollover_testdata",
+        .segment_size_bytes = 40,
+        .write_buffer_size_bytes = 4096,
+        .compression_enabled = 1
+    };
+
+    es_engine_t* rollover_engine = es_open(&rollover_config);
+    if(!rollover_engine) {
+        printf("FAILED: rollover_engine es_open returned NULL\n");
+        return 1;
+    }
+
+    uint32_t rollover_stream_id = 0;
+    if(expect_status(
+        es_register_stream_schema(rollover_engine, &schema, &rollover_stream_id),
+        ES_OK,
+        "register rollover stream"
+    ) != 0) {
+        es_close(rollover_engine);
+        return 1;
+    }
+
+    counter_payload_t rollover_payloads[3] = {
+        { .value = 40 },
+        { .value = 41 },
+        { .value = 42 }
+    };
+
+    es_record_t rollover_records[3] = {
+        {
+            .timestamp_ns = 3000000000ULL,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &rollover_payloads[0]
+        },
+        {
+            .timestamp_ns = 3001000000ULL,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &rollover_payloads[1]
+        },
+        {
+            .timestamp_ns = 3002000000ULL,
+            .record_type_id = 1,
+            .flags = 0,
+            .payload_size = sizeof(counter_payload_t),
+            .payload = &rollover_payloads[2]
+        }
+    };
+
+    if(expect_status(
+        es_write_batch(rollover_engine, rollover_stream_id, rollover_records, 3),
+        ES_OK,
+        "write rollover compressed batch"
+    ) != 0) {
+        es_close(rollover_engine);
+        return 1;
+    }
+
+    es_close(rollover_engine);
+
+    long rollover_segment_1_size = path_file_size(
+        "./compression_delta_rollover_testdata/stream_1/segment_000001.seg"
+    );
+    long rollover_segment_2_size = path_file_size(
+        "./compression_delta_rollover_testdata/stream_1/segment_000002.seg"
+    );
+
+    /*
+     * segment_size_bytes = 40
+     *
+     * First segment:
+     * first record full timestamp = 20 bytes
+     * second record delta timestamp = 16 bytes
+     * total = 36 bytes
+     *
+     * Third record would exceed 40 bytes, so it rolls over.
+     *
+     * New segment must reset timestamp state:
+     * third record must be written with full timestamp = 20 bytes
+     */
+    if(rollover_segment_1_size != 36) {
+        printf(
+            "FAILED: rollover segment 1 size mismatch expected=36 actual=%ld\n",
+            rollover_segment_1_size
+        );
+        return 1;
+    }
+
+    if(rollover_segment_2_size != 20) {
+        printf(
+            "FAILED: rollover segment 2 size mismatch expected=20 actual=%ld\n",
+            rollover_segment_2_size
+        );
+        return 1;
+    }
+
     printf("compression_delta_test passed\n");
     return 0;
 }
