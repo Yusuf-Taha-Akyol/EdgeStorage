@@ -167,6 +167,49 @@ int main(void) {
     }
 
     es_result_free(&result);
+    es_query_t all_types_query = {
+        .stream_id = stream_id,
+        .start_ts_ns = 1500,
+        .end_ts_ns = 3000,
+        .record_type_id = 0,
+        .limit = 0
+    };
+
+    es_result_t all_types_result = {0};
+
+    if(expect_status(
+        es_query_range(engine, &all_types_query, &all_types_result),
+        ES_OK,
+        "all types query range"
+    ) != 0) {
+        es_close(engine);
+        return 1;
+    }
+
+    if(expect_size(all_types_result.count, 2, "all types query result count") != 0) {
+        es_result_free(&all_types_result);
+        es_close(engine);
+        return 1;
+    }
+
+    counter_payload_t* all_first_payload =
+        (counter_payload_t*)all_types_result.records[0].payload;
+    counter_payload_t* all_second_payload =
+        (counter_payload_t*)all_types_result.records[1].payload;
+
+    if(expect_u32(all_first_payload->value, 20, "all types first payload") != 0) {
+        es_result_free(&all_types_result);
+        es_close(engine);
+        return 1;
+    }
+
+    if(expect_u32(all_second_payload->value, 30, "all types second payload") != 0) {
+        es_result_free(&all_types_result);
+        es_close(engine);
+        return 1;
+    }
+
+    es_result_free(&all_types_result);
     es_close(engine);
 
     printf("read_query_test passed\n");
