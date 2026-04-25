@@ -71,11 +71,23 @@ static es_status_t es_storage_reader_read_uncompressed_record(
 
     memset(out_record, 0, sizeof(*out_record));
 
+    if(fread(&out_record->timestamp_ns, sizeof(out_record->timestamp_ns), 1, file) != 1) {
+        if(feof(file)) {
+            return ES_ERR_NOT_FOUND;
+        }
+
+        return ES_ERR_IO;
+    }
+
     if(fread(&out_record->record_type_id, sizeof(out_record->record_type_id), 1, file) != 1) {
         return ES_ERR_IO;
     }
 
     if(fread(&out_record->flags, sizeof(out_record->flags), 1, file) != 1) {
+        return ES_ERR_IO;
+    }
+
+    if(fread(&out_record->payload_size, sizeof(out_record->payload_size), 1, file) != 1) {
         return ES_ERR_IO;
     }
 
@@ -85,11 +97,11 @@ static es_status_t es_storage_reader_read_uncompressed_record(
             return ES_ERR_OOM;
         }
 
-        if(fread(payload, 1, out_record->payload_size, file) != 1) {
+        if(fread(payload, 1, out_record->payload_size, file) != out_record->payload_size) {
             free(payload);
             return ES_ERR_IO;
         }
-        
+
         out_record->payload = payload;
     }
 

@@ -64,3 +64,13 @@ target_link_libraries(edgestorage_compression_delta_test
 )
 
 add_test(NAME edgestorage_compression_delta_test COMMAND edgestorage_compression_delta_test)
+
+add_executable(edgestorage_read_query_test
+    tests/read_query_test.c
+)
+
+target_link_libraries(edgestorage_read_query_test
+    PRIVATE edgestorage
+)
+
+add_test(NAME edgestorage_read_query_test COMMAND edgestorage_read_query_test)
