@@ -74,3 +74,11 @@ target_link_libraries(edgestorage_read_query_test
 )
 
 add_test(NAME edgestorage_read_query_test COMMAND edgestorage_read_query_test)
+
+add_executable(edgestorage_benchmark
+    benchmarks/basic_benchmark.c
+)
+
+target_link_libraries(edgestorage_benchmark
+    PRIVATE edgestorage
+)
