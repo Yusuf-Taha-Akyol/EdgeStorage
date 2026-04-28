@@ -74,3 +74,8 @@ edgestorage_smoke_test
 
 # debug information files
 *.dwo
+
+# Benchmark runtime data
+benchmark_testdata/
+benchmark_batch_testdata/
+benchmark_compressed_testdata/
