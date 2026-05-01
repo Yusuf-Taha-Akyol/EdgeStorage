@@ -1,41 +1,47 @@
 # EdgeStorage
 
-EdgeStorage is a lightweight open-source telemetry storage engine for edge devices.
+EdgeStorage is a lightweight C-based telemetry storage engine for edge devices.
 
-It is designed for constrained environments where low resource usage and compressed storage matter.  
-The initial goal is simple:
+It is being built for constrained environments where low resource usage and compressed telemetry storage matter.
 
-- use little CPU and memory
-- store telemetry in compressed form
-- run well on edge devices such as Raspberry Pi, Jetson, and similar Linux systems
+## Current Status
 
-## Project Status
+EdgeStorage is currently at a working prototype stage.
 
-Early design stage.  
-The first version will focus on a minimal C-based storage engine core.
+Implemented so far:
+- schema-based stream and record model
+- engine runtime lifecycle
+- append-only segmented storage writer
+- initial timestamp delta compression
+- basic read/query path
+- benchmark tooling
 
-## Goals
+## Current Capabilities
 
-- Low resource usage
-- Compressed telemetry storage
-- Simple embeddable C core
-- Edge-device friendly architecture
+- append-only telemetry writes
+- segmented `.seg` storage files
+- stream-based storage layout
+- segment rollover
+- single and batch record writes
+- initial timestamp delta compression on write path
+- stream-based queries
+- time range queries
+- record type filtering
+- multi-segment reads
+- basic benchmark measurements
 
-## Planned Tech Stack
+## Not Yet Implemented
 
-- Language: C
-- Build system: CMake
-- Focus: embeddable storage engine for edge environments
+- payload-level compression
+- full decompression coverage
+- advanced indexing
+- durability modes / fsync benchmarking
+- sync / DDIL transport layer
+- production-grade recovery
 
-## Repository Structure
+## Build
 
-Planned structure:
-
-```text
-include/
-src/
-tests/
-examples/
-docs/
-tools/
-bench/
+```bash
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build

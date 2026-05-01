@@ -1,162 +1,18 @@
-# EdgeStorage Roadmap
+# Roadmap
 
-## Current Stage
+## Completed
 
-The project currently has a working append-only telemetry write path with initial timestamp delta compression support.
+- stream schema / record model
+- engine runtime lifecycle
+- append-only storage writer
+- initial timestamp delta compression
+- basic read/query path
+- benchmark tooling
 
-What is already done:
+## Next
 
-- repository created
-- initial README added
-- project folder structure created
-- CMake-based build flow added
-- public C API skeleton added
-- example and smoke test added
-- stream schema and record model foundation added
-- engine runtime lifecycle added
-- in-memory stream registration state added
-- append-only storage writer added
-- stream-based storage directories added
-- segment file rollover added
-- single and batch append paths added
-- timestamp delta compression write path added
-- compression-specific tests added
-
-## Phase 1: Foundation
-
-Goal: establish a stable project base
-
-Tasks:
-
-- finalize project documentation
-- stabilize public API direction
-- clarify data model and stream schema approach
-- keep build and test flow clean
-
-## Phase 2: Core Engine
-
-Goal: implement the smallest usable engine core
-
-Tasks:
-
-- implement engine lifecycle more cleanly
-- define internal engine state
-- validate config handling
-- prepare storage initialization flow
-
-## Phase 3: Stream and Record Model
-
-Goal: define how telemetry is represented
-
-Tasks:
-
-- define stream registration flow
-- define field types and stream schema
-- define record layout
-- define ownership and memory rules
-
-## Phase 4: Storage Path
-
-Goal: support real append-only local writes
-
-Tasks:
-
-- design segment file format
-- implement append-only write path
-- persist metadata
-- establish simple on-disk structure
-
-## Phase 5: Compression
-
-Goal: add first practical compression behavior without breaking the append-only write path.
-
-Current status:
-
-- Compression v1 is implemented for timestamp delta encoding.
-- Compression is enabled through `compression_enabled`.
-- The first record in a segment writes the full `timestamp_ns`.
-- Subsequent records in the same segment write a `uint32_t` timestamp delta.
-- Segment rollover resets timestamp delta state so each segment remains independently decodable.
-- Non-monotonic timestamps are rejected in the compressed write path.
-- Timestamp deltas larger than `UINT32_MAX` are rejected for now.
-
-In scope for the current version:
-
-- timestamp delta encoding
-- compressed write path
-- compressed segment size accounting
-- rollover behavior with compression enabled
-- compression-focused tests
-
-Out of scope for the current version:
-
-- read/query/decompression path
-- payload integer field compression
-- float/double compression
-- delta-of-delta encoding
-- frame-of-reference encoding
-- benchmarking
-
-## Phase 6: Read Path
-
-Goal: support basic retrieval
-
-Current status:
-
-- Basic read/query path is implemented.
-- `es_query_range()` now returns real records from stored segment files.
-- Stream-based reads are supported through stream-specific segment directories.
-- Time range filtering is supported.
-- Optional `record_type_id` filtering is supported.
-- `record_type_id == 0` returns all record types.
-- Query result limiting is supported through `limit`.
-- Multi-segment linear scan is supported.
-- Uncompressed segment reads are supported.
-- Timestamp-delta compressed segment reads are supported.
-- Segment rollover resets timestamp decode state correctly.
-- Query result payload ownership is handled through `es_result_free()`.
-
-In scope for the current version:
-
-- linear scan based read/query path
-- stream-based record retrieval
-- time range filtering
-- record type filtering
-- result limit handling
-- uncompressed record decoding
-- timestamp delta decompression
-- multi-segment read tests
-
-Out of scope for the current version:
-
-- indexing
-- SQL-like query language
-- aggregations
-- field-level filtering
-- production-grade corrupted segment recovery
-- advanced compression formats
-- query optimization
-
-## Phase 7: Benchmarks
-
-Goal: prove technical value
-
-Tasks:
-
-- generate synthetic telemetry data
-- measure storage size reduction
-- measure build and runtime stability
-- measure CPU and memory overhead
-- compare against simple raw storage baselines
-
-## Later Phases
-
-Possible later expansions:
-
-- stronger indexing
-- richer query support
-- multi-language bindings
-- offline synchronization
-- recovery and durability improvements
-- benchmark comparison against SQLite or other alternatives
-
+- payload-aware compression
+- durability / fsync modes
+- better query/index support
+- real telemetry workload benchmarks
+- edge-device validation
