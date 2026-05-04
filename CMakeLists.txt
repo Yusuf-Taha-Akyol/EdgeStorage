@@ -17,6 +17,7 @@ add_library(edgestorage
     src/storage/storage_writer.c
     src/storage/storage_reader.c
     src/storage/segment_format.c
+    src/compression/compression.c
 )
 
 target_include_directories(edgestorage

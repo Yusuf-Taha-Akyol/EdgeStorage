@@ -6,6 +6,7 @@
 #include "stdio.h"
 #include "stddef.h"
 #include "stdint.h"
+#include "compression.h"
 
 #define ES_STORAGE_PATH_MAX 512
 
@@ -14,8 +15,7 @@ typedef struct {
     uint32_t active_segment_index;
     size_t active_segment_size_bytes;
 
-    uint64_t last_timestamp_ns;
-    int has_last_timestamp;
+    es_compression_context_t compression_ctx;
     
     FILE* active_segment_file;
     char stream_dir_path[ES_STORAGE_PATH_MAX];
