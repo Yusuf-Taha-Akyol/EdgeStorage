@@ -1,5 +1,6 @@
 #include "storage_writer.h"
 #include "runtime.h"
+#include "segment_format.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -103,9 +104,10 @@ static es_status_t es_storage_writer_ensure_directory(const char* path) {
 }
 
 static es_status_t es_storage_writer_open_active_segment(
+    const es_engine_t* engine,
     es_stream_storage_state_t* state
 ) {
-    if(!state) {
+    if(!engine || !state) {
         return ES_ERR_INVALID_ARG;
     }
 
@@ -116,6 +118,33 @@ static es_status_t es_storage_writer_open_active_segment(
     state->active_segment_file = fopen(state->active_segment_path, "ab");
     if(!state->active_segment_file) {
         return ES_ERR_IO;
+    }
+
+    if(state->active_segment_size_bytes == 0) {
+        es_segment_header_t header = {
+            .magic = ES_SEGMENT_MAGIC,
+            .version = ES_SEGMENT_FORMAT_VERSION,
+            .header_size = sizeof(es_segment_header_t),
+            .stream_id = state->stream_id,
+            .segment_index = state->active_segment_index,
+            .compression_mode = es_segment_format_compression_from_config(
+                engine->config.compression_enabled
+            ),
+            .record_format_version = ES_RECORD_FORMAT_VERSION,
+            .flags = 0,
+            .reserved = 0
+        };
+
+        es_status_t status = es_segment_format_write_header(
+            state->active_segment_file,
+            &header
+        );
+
+        if(status != ES_OK) {
+            return status;
+        }
+
+        state->active_segment_size_bytes = sizeof(es_segment_header_t);
     }
 
     return ES_OK;
@@ -224,10 +253,13 @@ static es_status_t es_storage_writer_prepare_for_append(
         ? es_storage_writer_record_delta_encoded_size(state, record)
         : es_storage_writer_record_encoded_size(record);
 
-    if(state->active_segment_size_bytes > 0 &&
-       state->active_segment_size_bytes + record_size > engine->config.segment_size_bytes) {
+    size_t current_segment_size = state->active_segment_size_bytes == 0
+        ? sizeof(es_segment_header_t)
+        : state->active_segment_size_bytes;
+
+    if(current_segment_size + record_size > engine->config.segment_size_bytes) {
         return es_storage_writer_rollover_segment(state);
-       }
+    }
 
     return ES_OK;
 }
@@ -466,7 +498,7 @@ es_status_t es_storage_writer_append_record(
         ? es_storage_writer_record_delta_encoded_size(state,record)
         : es_storage_writer_record_encoded_size(record);
 
-    status = es_storage_writer_open_active_segment(state);
+    status = es_storage_writer_open_active_segment(engine, state);
     if(status != ES_OK) {
         return status;
     }

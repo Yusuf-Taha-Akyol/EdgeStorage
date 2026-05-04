@@ -216,7 +216,7 @@ int main(void) {
 
     es_config_t multisegment_config = {
         .storage_path = "./read_query_multisegment_testdata",
-        .segment_size_bytes = 40,
+        .segment_size_bytes = 71,
         .write_buffer_size_bytes = 4096,
         .compression_enabled = 0
     };
@@ -508,7 +508,7 @@ int main(void) {
 
     es_config_t compressed_rollover_config = {
         .storage_path = "./read_query_compressed_rollover_testdata",
-        .segment_size_bytes = 40,
+        .segment_size_bytes = 71,
         .write_buffer_size_bytes = 4096,
         .compression_enabled = 1
     };

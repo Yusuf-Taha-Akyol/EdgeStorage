@@ -1,5 +1,6 @@
 #include "storage_reader.h"
 #include "runtime.h"
+#include "segment_format.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -270,12 +271,20 @@ es_status_t es_storage_reader_query_range(
             return ES_ERR_IO;
         }
 
+        es_segment_header_t header;
+        status = es_segment_format_read_header(file, &header);
+        if(status != ES_OK) {
+            fclose(file);
+            es_result_free(out_result);
+            return status;
+        }
+
         uint64_t last_timestamp_ns = 0;
         int has_last_timestamp = 0;
 
         while(1) {
             es_record_t record;
-            es_status_t read_status = engine->config.compression_enabled
+            es_status_t read_status = header.compression_mode == ES_SEGMENT_COMPRESSION_TIMESTAMP_DELTA
                 ? es_storage_reader_read_compressed_record(
                     file,
                     &record,

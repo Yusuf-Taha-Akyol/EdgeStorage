@@ -120,7 +120,7 @@ int main(void) {
 
     es_config_t config = {
         .storage_path = "./storage_flow_testdata",
-        .segment_size_bytes = 128,
+        .segment_size_bytes = 160,
         .write_buffer_size_bytes = 4096,
         .compression_enabled = 0
     };
@@ -164,7 +164,10 @@ int main(void) {
     }
 
     long size = path_file_size(segment_path);
-    long expected_size = 16 + (long)sizeof(imu_payload_t);
+    long segment_header_size = 32;
+    long imu_record_size = 16 + (long)sizeof(imu_payload_t);
+    long expected_size = segment_header_size + imu_record_size;
+
 
     if(size != expected_size) {
         printf("FAILED: segment size mismatch expected=%ld actual=%ld\n", expected_size, size);
@@ -208,7 +211,8 @@ int main(void) {
     }
 
     long size_after_batch_segment_1 = path_file_size(segment_path);
-    long expected_size_after_batch_segment_1 = 3 * expected_size;
+    long expected_size_after_batch_segment_1 =
+        segment_header_size + (3 * imu_record_size);
 
     if(size_after_batch_segment_1 != expected_size_after_batch_segment_1) {
         printf(
@@ -298,13 +302,21 @@ int main(void) {
         return 1;
     }
 
-    long expected_segment_1_size = 3 * expected_size;
+    long gps_record_size = 16 + (long)sizeof(gps_payload_t);
+    long battery_record_size = 16 + (long)sizeof(battery_payload_t);
+    long temperature_record_size = 16 + (long)sizeof(temperature_payload_t);
+
+    long expected_segment_1_size =
+        segment_header_size + (3 * imu_record_size);
+
     long expected_segment_2_size =
-        expected_size +
-        (16 + (long)sizeof(gps_payload_t)) +
-        (16 + (long)sizeof(battery_payload_t));
+        segment_header_size +
+        imu_record_size +
+        gps_record_size +
+        battery_record_size;
+
     long expected_segment_3_size =
-        16 + (long)sizeof(temperature_payload_t);
+        segment_header_size + temperature_record_size;
 
     long actual_segment_1_size = path_file_size(segment_path);
     long actual_segment_2_size = path_file_size(segment_2_path);

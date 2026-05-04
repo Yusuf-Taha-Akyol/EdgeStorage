@@ -90,7 +90,7 @@ int main(void) {
 
     es_config_t config = {
         .storage_path = "./testdata",
-        .segment_size_bytes = 32,
+        .segment_size_bytes = 64,
         .write_buffer_size_bytes = 4096,
         .compression_enabled = 1
     };

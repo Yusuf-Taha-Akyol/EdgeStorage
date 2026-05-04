@@ -124,8 +124,9 @@ int main(void) {
      * next records: 4 + 2 + 2 + 4 + 4 = 16 bytes each
      * total = 52 bytes
      */
-    long expected_compressed_size = 52;
-    long uncompressed_size = 60;
+    long segment_header_size = 32;
+    long expected_compressed_size = segment_header_size + 52;
+    long uncompressed_size = segment_header_size + 60;
 
     if(actual_size != expected_compressed_size) {
         printf(
@@ -283,7 +284,7 @@ int main(void) {
 
     es_config_t rollover_config = {
         .storage_path = "./compression_delta_rollover_testdata",
-        .segment_size_bytes = 40,
+        .segment_size_bytes = 72,
         .write_buffer_size_bytes = 4096,
         .compression_enabled = 1
     };
@@ -365,7 +366,7 @@ int main(void) {
      * New segment must reset timestamp state:
      * third record must be written with full timestamp = 20 bytes
      */
-    if(rollover_segment_1_size != 36) {
+    if(rollover_segment_1_size != segment_header_size + 36) {
         printf(
             "FAILED: rollover segment 1 size mismatch expected=36 actual=%ld\n",
             rollover_segment_1_size
@@ -373,7 +374,7 @@ int main(void) {
         return 1;
     }
 
-    if(rollover_segment_2_size != 20) {
+    if(rollover_segment_2_size != segment_header_size + 20) {
         printf(
             "FAILED: rollover segment 2 size mismatch expected=20 actual=%ld\n",
             rollover_segment_2_size
