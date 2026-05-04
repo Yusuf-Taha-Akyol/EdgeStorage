@@ -83,3 +83,17 @@ add_executable(edgestorage_benchmark
 target_link_libraries(edgestorage_benchmark
     PRIVATE edgestorage
 )
+
+add_executable(edgestorage_segment_header_test
+    tests/segment_header_test.c
+)
+
+target_link_libraries(edgestorage_segment_header_test
+    PRIVATE edgestorage
+)
+
+target_include_directories(edgestorage_segment_header_test
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/internal
+)
+
+add_test(NAME edgestorage_segment_header_test COMMAND edgestorage_segment_header_test)
