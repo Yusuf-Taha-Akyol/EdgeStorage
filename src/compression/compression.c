@@ -33,10 +33,8 @@ size_t es_compression_encoded_record_size(
         ? sizeof(uint32_t)
         : sizeof(record->timestamp_ns);
 
-    return timestamp_size
-        + sizeof(record->record_type_id)
-        + sizeof(record->flags)
-        + sizeof(record->payload_size)
+    return sizeof(es_encoded_record_header_t)
+        + timestamp_size
         + record->payload_size;
 }
 
@@ -52,6 +50,28 @@ es_status_t es_compression_write_record(
 
     if(compression_mode != ES_SEGMENT_COMPRESSION_TIMESTAMP_DELTA) {
         return ES_ERR_INVALID_ARG;
+    }
+
+    if(record->payload_size > 0 && !record->payload) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    uint8_t timestamp_encoding = ctx->has_last_timestamp
+        ? ES_TIMESTAMP_ENCODING_DELTA_U32
+        : ES_TIMESTAMP_ENCODING_FULL_U64;
+
+    es_encoded_record_header_t header = {
+        .timestamp_encoding = timestamp_encoding,
+        .payload_encoding = ES_PAYLOAD_ENCODING_RAW,
+        .record_type_id = record->record_type_id,
+        .flags = record->flags,
+        .reserved = 0,
+        .uncompressed_payload_size = record->payload_size,
+        .encoded_payload_size = record->payload_size
+    };
+
+    if(fwrite(&header, sizeof(header), 1, file) != 1) {
+        return ES_ERR_IO;
     }
 
     if(ctx->has_last_timestamp) {
@@ -76,23 +96,7 @@ es_status_t es_compression_write_record(
         }
     }
 
-    if(fwrite(&record->record_type_id, sizeof(record->record_type_id), 1, file) != 1) {
-        return ES_ERR_IO;
-    }
-
-    if(fwrite(&record->flags, sizeof(record->flags), 1, file) != 1) {
-        return ES_ERR_IO;
-    }
-
-    if(fwrite(&record->payload_size, sizeof(record->payload_size), 1, file) != 1) {
-        return ES_ERR_IO;
-    }
-
     if(record->payload_size > 0) {
-        if(!record->payload) {
-            return ES_ERR_INVALID_ARG;
-        }
-
         if(fwrite(record->payload, record->payload_size, 1, file) != 1) {
             return ES_ERR_IO;
         }
@@ -121,34 +125,45 @@ es_status_t es_compression_read_record(
 
     memset(out_record, 0, sizeof(*out_record));
 
-    if(ctx->has_last_timestamp) {
+    es_encoded_record_header_t header;
+    if(fread(&header, sizeof(header), 1, file) != 1) {
+        if(feof(file)) {
+            return ES_ERR_NOT_FOUND;
+        }
+
+        return ES_ERR_IO;
+    }
+
+    if(header.payload_encoding != ES_PAYLOAD_ENCODING_RAW) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    if(header.encoded_payload_size != header.uncompressed_payload_size) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    out_record->record_type_id = header.record_type_id;
+    out_record->flags = header.flags;
+    out_record->payload_size = header.uncompressed_payload_size;
+    out_record->payload = NULL;
+
+    if(header.timestamp_encoding == ES_TIMESTAMP_ENCODING_FULL_U64) {
+        if(fread(&out_record->timestamp_ns, sizeof(out_record->timestamp_ns), 1, file) != 1) {
+            return ES_ERR_IO;
+        }
+    } else if(header.timestamp_encoding == ES_TIMESTAMP_ENCODING_DELTA_U32) {
+        if(!ctx->has_last_timestamp) {
+            return ES_ERR_INVALID_ARG;
+        }
+
         uint32_t delta_ns = 0;
         if(fread(&delta_ns, sizeof(delta_ns), 1, file) != 1) {
-            if(feof(file)) {
-                return ES_ERR_NOT_FOUND;
-            }
             return ES_ERR_IO;
         }
+
         out_record->timestamp_ns = ctx->last_timestamp_ns + delta_ns;
     } else {
-        if(fread(&out_record->timestamp_ns, sizeof(out_record->timestamp_ns), 1, file) != 1) {
-            if(feof(file)) {
-                return ES_ERR_NOT_FOUND;
-            }
-            return ES_ERR_IO;
-        }
-    }
-
-    if(fread(&out_record->record_type_id, sizeof(out_record->record_type_id), 1, file) != 1) {
-        return ES_ERR_IO;
-    }
-
-    if(fread(&out_record->flags, sizeof(out_record->flags), 1, file) != 1) {
-        return ES_ERR_IO;
-    }
-
-    if(fread(&out_record->payload_size, sizeof(out_record->payload_size), 1, file) != 1) {
-        return ES_ERR_IO;
+        return ES_ERR_INVALID_ARG;
     }
 
     out_record->payload = NULL;

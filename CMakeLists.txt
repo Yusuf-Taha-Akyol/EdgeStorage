@@ -65,6 +65,10 @@ target_link_libraries(edgestorage_compression_delta_test
     PRIVATE edgestorage
 )
 
+target_include_directories(edgestorage_compression_delta_test
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/internal
+)
+
 add_test(NAME edgestorage_compression_delta_test COMMAND edgestorage_compression_delta_test)
 
 add_executable(edgestorage_read_query_test
