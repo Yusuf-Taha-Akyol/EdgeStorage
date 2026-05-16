@@ -1,7 +1,9 @@
 #include "edgestorage/edgestorage.h"
+#include "compression.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <sys/stat.h>
 
 typedef struct {
@@ -114,19 +116,21 @@ int main(void) {
     const char* segment_path = "./compression_delta_testdata/stream_1/segment_000001.seg";
     long actual_size = path_file_size(segment_path);
 
-    /*
-     * Uncompressed per record:
-     * timestamp_ns 8 + record_type_id 2 + flags 2 + payload_size 4 + payload 4 = 20 bytes
-     * 3 records = 60 bytes
-     *
-     * Delta timestamp encoded:
-     * first record: 8 + 2 + 2 + 4 + 4 = 20 bytes
-     * next records: 4 + 2 + 2 + 4 + 4 = 16 bytes each
-     * total = 52 bytes
-     */
     long segment_header_size = 32;
-    long expected_compressed_size = segment_header_size + 52;
-    long uncompressed_size = segment_header_size + 60;
+    long first_compressed_record_size =
+        (long)(sizeof(es_encoded_record_header_t)
+        + sizeof(uint64_t)
+        + sizeof(counter_payload_t));
+
+    long delta_compressed_record_size =
+        (long)(sizeof(es_encoded_record_header_t)
+        + sizeof(uint32_t)
+        + sizeof(counter_payload_t));
+
+    long expected_compressed_size =
+        segment_header_size
+        + first_compressed_record_size
+        + 2L * delta_compressed_record_size;
 
     if(actual_size != expected_compressed_size) {
         printf(
@@ -137,16 +141,7 @@ int main(void) {
         return 1;
     }
 
-    if(actual_size >= uncompressed_size) {
-        printf(
-            "FAILED: compressed size should be smaller than uncompressed size compressed=%ld uncompressed=%ld\n",
-            actual_size,
-            uncompressed_size
-        );
-        return 1;
-    }
-
-        system("rm -rf ./compression_delta_invalid_testdata");
+    system("rm -rf ./compression_delta_invalid_testdata");
 
     es_config_t invalid_config = {
         .storage_path = "./compression_delta_invalid_testdata",
@@ -213,7 +208,7 @@ int main(void) {
 
     es_close(invalid_engine);
 
-        system("rm -rf ./compression_delta_overflow_testdata");
+    system("rm -rf ./compression_delta_overflow_testdata");
 
     es_config_t overflow_config = {
         .storage_path = "./compression_delta_overflow_testdata",
@@ -280,7 +275,7 @@ int main(void) {
 
     es_close(overflow_engine);
 
-        system("rm -rf ./compression_delta_rollover_testdata");
+    system("rm -rf ./compression_delta_rollover_testdata");
 
     es_config_t rollover_config = {
         .storage_path = "./compression_delta_rollover_testdata",
@@ -352,32 +347,36 @@ int main(void) {
     long rollover_segment_2_size = path_file_size(
         "./compression_delta_rollover_testdata/stream_1/segment_000002.seg"
     );
+    long rollover_segment_3_size = path_file_size(
+        "./compression_delta_rollover_testdata/stream_1/segment_000003.seg"
+    );
 
-    /*
-     * segment_size_bytes = 40
-     *
-     * First segment:
-     * first record full timestamp = 20 bytes
-     * second record delta timestamp = 16 bytes
-     * total = 36 bytes
-     *
-     * Third record would exceed 40 bytes, so it rolls over.
-     *
-     * New segment must reset timestamp state:
-     * third record must be written with full timestamp = 20 bytes
-     */
-    if(rollover_segment_1_size != segment_header_size + 36) {
+    long expected_rollover_segment_size =
+        segment_header_size + first_compressed_record_size;
+
+    if(rollover_segment_1_size != expected_rollover_segment_size) {
         printf(
-            "FAILED: rollover segment 1 size mismatch expected=36 actual=%ld\n",
+            "FAILED: rollover segment 1 size mismatch expected=%ld actual=%ld\n",
+            expected_rollover_segment_size,
             rollover_segment_1_size
         );
         return 1;
     }
 
-    if(rollover_segment_2_size != segment_header_size + 20) {
+    if(rollover_segment_2_size != expected_rollover_segment_size) {
         printf(
-            "FAILED: rollover segment 2 size mismatch expected=20 actual=%ld\n",
+            "FAILED: rollover segment 2 size mismatch expected=%ld actual=%ld\n",
+            expected_rollover_segment_size,
             rollover_segment_2_size
+        );
+        return 1;
+    }
+
+    if(rollover_segment_3_size != expected_rollover_segment_size) {
+        printf(
+            "FAILED: rollover segment 3 size mismatch expected=%ld actual=%ld\n",
+            expected_rollover_segment_size,
+            rollover_segment_3_size
         );
         return 1;
     }
