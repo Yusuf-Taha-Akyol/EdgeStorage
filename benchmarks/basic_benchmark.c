@@ -12,6 +12,13 @@ typedef struct {
     uint32_t value;
 } benchmark_payload_t;
 
+typedef enum {
+    BENCH_WORKLOAD_RANDOM = 0,
+    BENCH_WORKLOAD_SMOOTH_I32 = 1,
+    BENCH_WORKLOAD_DELTA_I16 = 2,
+    BENCH_WORKLOAD_MIXED_DRONE_I32 = 3
+} benchmark_workload_t;
+
 static double elapsed_seconds(struct timespec start, struct timespec end) {
     double seconds = (double)(end.tv_sec - start.tv_sec);
     double nanoseconds = (double)(end.tv_nsec - start.tv_nsec) / 1000000000.0;
@@ -57,16 +64,170 @@ static long segment_directory_size(const char* directory_path) {
     return total_size;
 }
 
-static void fill_payload(unsigned char* payload, size_t payload_size, size_t record_index) {
-    for(size_t i = 0; i < payload_size; i++) {
-        payload[i] = (unsigned char)((record_index + i) & 0xFF);
+static const char* workload_name(benchmark_workload_t workload) {
+    switch(workload) {
+        case BENCH_WORKLOAD_RANDOM:
+            return "random";
+        case BENCH_WORKLOAD_SMOOTH_I32:
+            return "smooth_i32";
+        case BENCH_WORKLOAD_DELTA_I16:
+            return "delta_i16";
+        case BENCH_WORKLOAD_MIXED_DRONE_I32:
+            return "mixed_drone_i32";
+        default:
+            return "unknown";
     }
+}
+
+static int parse_workload(const char* value, benchmark_workload_t* out_workload) {
+    if(!out_workload) {
+        return 0;
+    }
+
+    if(!value || strcmp(value, "random") == 0) {
+        *out_workload = BENCH_WORKLOAD_RANDOM;
+        return 1;
+    }
+
+    if(strcmp(value, "smooth_i32") == 0) {
+        *out_workload = BENCH_WORKLOAD_SMOOTH_I32;
+        return 1;
+    }
+
+    if(strcmp(value, "delta_i16") == 0) {
+        *out_workload = BENCH_WORKLOAD_DELTA_I16;
+        return 1;
+    }
+
+    if(strcmp(value, "mixed_drone_i32") == 0) {
+        *out_workload = BENCH_WORKLOAD_MIXED_DRONE_I32;
+        return 1;
+    }
+
+    return 0;
+}
+
+static uint32_t deterministic_u32(uint32_t x) {
+    x ^= x >> 16;
+    x *= 0x7feb352dU;
+    x ^= x >> 15;
+    x *= 0x846ca68bU;
+    x ^= x >> 16;
+    return x;
+}
+
+static unsigned char deterministic_byte(size_t record_index, size_t byte_index) {
+    uint32_t seed =
+        (uint32_t)(record_index * 2654435761ULL) ^
+        (uint32_t)(byte_index * 2246822519ULL) ^
+        0x9e3779b9U;
+
+    return (unsigned char)(deterministic_u32(seed) & 0xFFU);
+}
+
+static void write_i32(unsigned char* dst, int32_t value) {
+    memcpy(dst, &value, sizeof(value));
+}
+
+static int32_t mixed_drone_value(size_t record_index, size_t field_index) {
+    int32_t i = (int32_t)record_index;
+
+    switch(field_index % 10) {
+        case 0:
+            /* ax: slow accelerometer drift */
+            return 1000 + i;
+        case 1:
+            /* ay: opposite drift */
+            return -800 - i;
+        case 2:
+            /* az: near gravity, very slow drift */
+            return 98000 + (i / 2);
+        case 3:
+            /* gx: medium gyro movement */
+            return 200 + (i * 3);
+        case 4:
+            /* gy: negative medium gyro movement */
+            return -300 - (i * 2);
+        case 5:
+            /* gz: slow yaw drift */
+            return 50 + (i * 4);
+        case 6:
+            /* battery_mv: slowly decreasing */
+            return 16800 - (i / 20);
+        case 7:
+            /* altitude_cm: climbing */
+            return 12000 + (i * 5);
+        case 8:
+            /* speed_cm_s: increasing slowly */
+            return 1500 + (i * 2);
+        case 9:
+        default:
+            /* temperature_centi: very slow increase */
+            return 2500 + (i / 50);
+    }
+}
+
+static void fill_random_payload(
+    unsigned char* payload,
+    size_t payload_size,
+    size_t record_index
+) {
+    for(size_t i = 0; i < payload_size; i++) {
+        payload[i] = deterministic_byte(record_index, i);
+    }
+}
+
+static void fill_i32_payload(
+    unsigned char* payload,
+    size_t payload_size,
+    size_t record_index,
+    benchmark_workload_t workload
+) {
+    size_t int32_count = payload_size / sizeof(int32_t);
+    size_t used_bytes = int32_count * sizeof(int32_t);
+
+    for(size_t j = 0; j < int32_count; j++) {
+        int32_t value = 0;
+
+        if(workload == BENCH_WORKLOAD_SMOOTH_I32) {
+            value = (int32_t)(1000 + (int32_t)(j * 100) + (int32_t)record_index);
+        } else if(workload == BENCH_WORKLOAD_DELTA_I16) {
+            value = (int32_t)(1000 + (int32_t)(j * 1000) + ((int32_t)record_index * 200));
+        } else if(workload == BENCH_WORKLOAD_MIXED_DRONE_I32) {
+            value = mixed_drone_value(record_index, j);
+        }
+
+        write_i32(payload + (j * sizeof(int32_t)), value);
+    }
+
+    for(size_t i = used_bytes; i < payload_size; i++) {
+        payload[i] = deterministic_byte(record_index, i);
+    }
+}
+
+static void fill_payload(
+    unsigned char* payload,
+    size_t payload_size,
+    size_t record_index,
+    benchmark_workload_t workload
+) {
+    if(!payload || payload_size == 0) {
+        return;
+    }
+
+    if(workload == BENCH_WORKLOAD_RANDOM) {
+        fill_random_payload(payload, payload_size, record_index);
+        return;
+    }
+
+    fill_i32_payload(payload, payload_size, record_index, workload);
 }
 
 int main(int argc, char** argv) {
     size_t record_count = 10000;
     size_t batch_size = 100;
     size_t payload_size_bytes = sizeof(benchmark_payload_t);
+    benchmark_workload_t workload = BENCH_WORKLOAD_RANDOM;
 
     if(argc >= 2) {
         record_count = (size_t)strtoull(argv[1], NULL, 10);
@@ -78,6 +239,14 @@ int main(int argc, char** argv) {
 
     if(argc >= 4) {
         payload_size_bytes = (size_t)strtoull(argv[3], NULL, 10);
+    }
+
+    if(argc >= 5) {
+        if(!parse_workload(argv[4], &workload)) {
+            printf("FAILED: unknown workload '%s'\n", argv[4]);
+            printf("Supported workloads: random, smooth_i32, delta_i16, mixed_drone_i32\n");
+            return 1;
+        }
     }
 
     if(record_count == 0) {
@@ -144,7 +313,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-
     unsigned char* single_payload = (unsigned char*)malloc(payload_size_bytes);
     if(!single_payload) {
         printf("FAILED: single payload allocation failed\n");
@@ -158,7 +326,7 @@ int main(int argc, char** argv) {
     clock_gettime(CLOCK_MONOTONIC, &single_start);
 
     for(size_t i = 0; i < record_count; i++) {
-        fill_payload(single_payload, payload_size_bytes, i);
+        fill_payload(single_payload, payload_size_bytes, i, workload);
 
         es_record_t record = {
             .timestamp_ns = 1000000000ULL + ((uint64_t)i * 1000000ULL),
@@ -181,7 +349,6 @@ int main(int argc, char** argv) {
 
     free(single_payload);
 
-    clock_gettime(CLOCK_MONOTONIC, &single_end);
     double single_write_seconds = elapsed_seconds(single_start, single_end);
     double single_write_records_per_sec = (double)record_count / single_write_seconds;
 
@@ -212,7 +379,7 @@ int main(int argc, char** argv) {
 
     unsigned char* batch_payloads =
         (unsigned char*)malloc(payload_size_bytes * batch_size);
-    es_record_t* batch_records = 
+    es_record_t* batch_records =
         (es_record_t*)malloc(sizeof(es_record_t) * batch_size);
 
     if(!batch_payloads || !batch_records) {
@@ -239,7 +406,7 @@ int main(int argc, char** argv) {
             size_t record_index = written + i;
 
             unsigned char* payload = batch_payloads + (i * payload_size_bytes);
-            fill_payload(payload, payload_size_bytes, record_index);
+            fill_payload(payload, payload_size_bytes, record_index, workload);
 
             batch_records[i].timestamp_ns = 1000000000ULL + ((uint64_t)record_index * 1000000ULL);
             batch_records[i].record_type_id = 1;
@@ -286,7 +453,7 @@ int main(int argc, char** argv) {
 
     struct timespec query_start;
     struct timespec query_end;
-    
+
     clock_gettime(CLOCK_MONOTONIC, &query_start);
 
     status = es_query_range(batch_engine, &query, &query_result);
@@ -316,7 +483,7 @@ int main(int argc, char** argv) {
 
     es_result_free(&query_result);
     es_close(batch_engine);
-    
+
     long uncompressed_size_bytes = segment_directory_size("./benchmark_batch_testdata/stream_1");
 
     system("rm -rf ./benchmark_compressed_testdata");
@@ -353,13 +520,13 @@ int main(int argc, char** argv) {
         free(compressed_records);
         es_close(compressed_engine);
         return 1;
-    }  
+    }
 
     struct timespec compressed_start;
     struct timespec compressed_end;
 
     clock_gettime(CLOCK_MONOTONIC, &compressed_start);
-    
+
     written = 0;
     while(written < record_count) {
         size_t current_batch_size = batch_size;
@@ -371,7 +538,7 @@ int main(int argc, char** argv) {
             size_t record_index = written + i;
 
             unsigned char* payload = compressed_payloads + (i * payload_size_bytes);
-            fill_payload(payload, payload_size_bytes, record_index);
+            fill_payload(payload, payload_size_bytes, record_index, workload);
 
             compressed_records[i].timestamp_ns =
                 1000000000ULL + ((uint64_t)record_index * 1000000ULL);
@@ -405,15 +572,22 @@ int main(int argc, char** argv) {
     double compressed_write_records_per_sec = (double)record_count / compressed_write_seconds;
 
     double payload_bytes_per_record = (double)payload_size_bytes;
-    double batch_payload_mb_per_sec = ((double)record_count * payload_bytes_per_record) / (1024.0 * 1024.0) / batch_write_seconds;
-    double compressed_payload_mb_per_sec = ((double)record_count * payload_bytes_per_record) / (1024.0 * 1024.0) /compressed_write_seconds;
+    double batch_payload_mb_per_sec =
+        ((double)record_count * payload_bytes_per_record) /
+        (1024.0 * 1024.0) /
+        batch_write_seconds;
+
+    double compressed_payload_mb_per_sec =
+        ((double)record_count * payload_bytes_per_record) /
+        (1024.0 * 1024.0) /
+        compressed_write_seconds;
 
     free(compressed_payloads);
     free(compressed_records);
     es_close(compressed_engine);
 
     long compressed_size_bytes = segment_directory_size("./benchmark_compressed_testdata/stream_1");
-    
+
     double compression_ratio = 0.0;
     if(compressed_size_bytes > 0) {
         compression_ratio = (double)uncompressed_size_bytes / (double)compressed_size_bytes;
@@ -423,6 +597,7 @@ int main(int argc, char** argv) {
     printf("records=%zu\n", record_count);
     printf("batch_size=%zu\n", batch_size);
     printf("payload_size_bytes=%zu\n", payload_size_bytes);
+    printf("workload_type=%s\n", workload_name(workload));
     printf("single_write_seconds=%.6f\n", single_write_seconds);
     printf("single_write_records_per_sec=%.2f\n", single_write_records_per_sec);
     printf("batch_write_seconds=%.6f\n", batch_write_seconds);
@@ -437,6 +612,6 @@ int main(int argc, char** argv) {
     printf("compression_ratio=%.3f\n", compression_ratio);
     printf("query_latency_ms=%.3f\n", query_latency_ms);
     printf("query_result_count=%zu\n", query_result_count);
-    
+
     return 0;
 }
