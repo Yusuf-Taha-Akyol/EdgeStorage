@@ -309,6 +309,7 @@ void es_storage_writer_shutdown(es_engine_t* engine) {
 
     for(size_t i = 0; i < engine->stream_storage_count; ++i) {
         es_storage_writer_close_active_segment(&engine->stream_storage_states[i]);
+        es_compression_context_destroy(&engine->stream_storage_states[i].compression_ctx);
     }
 
     free(engine->stream_storage_states);

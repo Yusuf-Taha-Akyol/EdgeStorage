@@ -31,6 +31,8 @@ static int expect_status(es_status_t actual, es_status_t expected, const char* l
 static int expect_encoded_header(
     FILE* file,
     uint8_t expected_timestamp_encoding,
+    uint8_t expected_payload_encoding,
+    uint32_t expected_encoded_payload_size,
     const char* label
 ) {
     es_encoded_record_header_t header;
@@ -50,11 +52,11 @@ static int expect_encoded_header(
         return 1;
     }
 
-    if(header.payload_encoding != ES_PAYLOAD_ENCODING_RAW) {
+    if(header.payload_encoding != expected_payload_encoding) {
         printf(
             "FAILED: %s payload encoding expected=%u actual=%u\n",
             label,
-            ES_PAYLOAD_ENCODING_RAW,
+            expected_payload_encoding,
             header.payload_encoding
         );
         return 1;
@@ -97,11 +99,11 @@ static int expect_encoded_header(
         return 1;
     }
 
-    if(header.encoded_payload_size != sizeof(counter_payload_t)) {
+    if(header.encoded_payload_size != expected_encoded_payload_size) {
         printf(
-            "FAILED: %s encoded payload size expected=%zu actual=%u\n",
+            "FAILED: %s encoded payload size expected=%u actual=%u\n",
             label,
-            sizeof(counter_payload_t),
+            expected_encoded_payload_size,
             header.encoded_payload_size
         );
         return 1;
@@ -207,7 +209,7 @@ int main(void) {
     long delta_compressed_record_size =
         (long)(sizeof(es_encoded_record_header_t)
         + sizeof(uint32_t)
-        + sizeof(counter_payload_t));
+        + sizeof(int8_t));
 
     long expected_compressed_size =
         segment_header_size
@@ -235,7 +237,13 @@ int main(void) {
         return 1;
     }
 
-    if(expect_encoded_header(encoded_file, ES_TIMESTAMP_ENCODING_FULL_U64, "first compressed record") != 0) {
+    if(expect_encoded_header(
+        encoded_file,
+        ES_TIMESTAMP_ENCODING_FULL_U64,
+        ES_PAYLOAD_ENCODING_RAW,
+        sizeof(counter_payload_t),
+        "first compressed record"
+    ) != 0) {
         fclose(encoded_file);
         return 1;
     }
@@ -246,18 +254,30 @@ int main(void) {
         return 1;
     }
 
-    if(expect_encoded_header(encoded_file, ES_TIMESTAMP_ENCODING_DELTA_U32, "second compressed record") != 0) {
+    if(expect_encoded_header(
+        encoded_file,
+        ES_TIMESTAMP_ENCODING_DELTA_U32,
+        ES_PAYLOAD_ENCODING_DELTA_I32_I8,
+        sizeof(int8_t),
+        "second compressed record"
+    ) != 0) {
         fclose(encoded_file);
         return 1;
     }
 
-    if(fseek(encoded_file, sizeof(uint32_t) + sizeof(counter_payload_t), SEEK_CUR) != 0) {
+    if(fseek(encoded_file, sizeof(uint32_t) + sizeof(int8_t), SEEK_CUR) != 0) {
         fclose(encoded_file);
         printf("FAILED: could not seek past second compressed record body\n");
         return 1;
     }
 
-    if(expect_encoded_header(encoded_file, ES_TIMESTAMP_ENCODING_DELTA_U32, "third compressed record") != 0) {
+    if(expect_encoded_header(
+        encoded_file,
+        ES_TIMESTAMP_ENCODING_DELTA_U32,
+        ES_PAYLOAD_ENCODING_DELTA_I32_I8,
+        sizeof(int8_t),
+        "third compressed record"
+    ) != 0) {
         fclose(encoded_file);
         return 1;
     }
