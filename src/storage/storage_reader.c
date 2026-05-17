@@ -235,6 +235,7 @@ es_status_t es_storage_reader_query_range(
             }
 
             if(read_status != ES_OK) {
+                es_compression_context_destroy(&compression_ctx);
                 fclose(file);
                 es_result_free(out_result);
                 return read_status;
@@ -248,6 +249,7 @@ es_status_t es_storage_reader_query_range(
 
                 if(append_status != ES_OK) {
                     free((void*)record.payload);
+                    es_compression_context_destroy(&compression_ctx);
                     fclose(file);
                     es_result_free(out_result);
                     return append_status;
@@ -257,11 +259,13 @@ es_status_t es_storage_reader_query_range(
             }
 
             if(query->limit > 0 && out_result->count >= query->limit) {
+                es_compression_context_destroy(&compression_ctx);
                 fclose(file);
                 return ES_OK;
             }
         }
 
+        es_compression_context_destroy(&compression_ctx);
         fclose(file);
     }
 

@@ -9,6 +9,10 @@
 typedef struct {
     uint64_t last_timestamp_ns;
     int has_last_timestamp;
+
+    unsigned char* previous_payload;
+    uint32_t previous_payload_size;
+    int has_previous_payload;
 } es_compression_context_t;
 
 typedef enum {
@@ -17,7 +21,9 @@ typedef enum {
 } es_timestamp_encoding_t;
 
 typedef enum {
-    ES_PAYLOAD_ENCODING_RAW = 0
+    ES_PAYLOAD_ENCODING_RAW = 0,
+    ES_PAYLOAD_ENCODING_DELTA_I32_I8 = 1,
+    ES_PAYLOAD_ENCODING_DELTA_I32_I16 = 2
 } es_payload_encoding_t;
 
 typedef struct {
@@ -33,6 +39,8 @@ typedef struct {
 void es_compression_context_init(es_compression_context_t* ctx);
 
 void es_compression_context_reset(es_compression_context_t* ctx);
+
+void es_compression_context_destroy(es_compression_context_t* ctx);
 
 size_t es_compression_encoded_record_size(
     const es_compression_context_t* ctx,
