@@ -591,7 +591,7 @@ def generate_html_report(summary, output_path: Path):
                 <th>Write Throughput</th>
                 <th>Disk Usage</th>
                 <th>Compression Ratio</th>
-                <th>Query Latency</th>
+                <th>Read/Query Latency</th>
                 <th>Readback</th>
             </tr>
         </thead>
@@ -608,9 +608,17 @@ def generate_html_report(summary, output_path: Path):
             measured, read back, and compared under the same workload.
         </p>
         <p>
-            The next step is to connect this visual benchmark wrapper to the existing
-            <code>edgestorage_benchmark</code> executable, so EdgeStorage appears next to
-            SQLite, CSV, and raw binary in the same report.
+            This report includes EdgeStorage results from the native C
+            <code>edgestorage_benchmark</code> executable, alongside Python-based SQLite,
+            CSV, and raw binary baselines. The current MVP demonstrates append-only
+            telemetry writes, compressed storage output, query/readback validation,
+            and a visual benchmark report.
+        </p>
+        <p>
+            Current limitation: EdgeStorage is measured through its native benchmark
+            workload, while the Python baselines use the generated telemetry workload.
+            The next milestone is to feed the exact same generated telemetry dataset
+            into EdgeStorage through a dedicated C flight workload writer.
         </p>
     </div>
 </div>
