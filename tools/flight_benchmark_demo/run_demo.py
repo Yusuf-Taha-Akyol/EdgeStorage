@@ -3,7 +3,6 @@
 import argparse
 import csv
 import json
-import os
 import random
 import re
 import sqlite3
@@ -134,6 +133,7 @@ def measure_csv_write(telemetry, output_path: Path):
         "query_latency_ms": query_latency_ms,
         "readback_count": readback_count,
         "correctness": readback_count > 0,
+        "compression_ratio": None,
     }
 
 
@@ -185,6 +185,7 @@ def measure_sqlite_write(telemetry, output_path: Path):
         "query_latency_ms": query_latency_ms,
         "readback_count": readback_count,
         "correctness": readback_count > 0,
+        "compression_ratio": None,
     }
 
 
@@ -237,6 +238,99 @@ def measure_raw_binary_write(telemetry, output_path: Path):
         "query_latency_ms": query_latency_ms,
         "readback_count": readback_count,
         "correctness": readback_count > 0,
+        "compression_ratio": None,
+    }
+
+def parse_benchmark_output(stdout: str):
+    metrics = {}
+
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+
+        try:
+            if "." in value:
+                metrics[key] = float(value)
+            else:
+                metrics[key] = int(value)
+        except ValueError:
+            metrics[key] = value
+
+    return metrics
+
+
+def measure_edgestorage_benchmark(records: int, payload_bytes: int):
+    benchmark_path = Path("build") / "edgestorage_benchmark"
+
+    if not benchmark_path.exists():
+        return {
+            "name": "EdgeStorage",
+            "write_seconds": None,
+            "records_per_second": 0,
+            "disk_usage_bytes": 0,
+            "query_latency_ms": 0,
+            "readback_count": 0,
+            "correctness": False,
+            "compression_ratio": None,
+            "note": "build/edgestorage_benchmark not found"
+        }
+
+    command = [
+        str(benchmark_path),
+        str(records),
+        "100",
+        str(payload_bytes),
+        "mixed_drone_i32",
+    ]
+
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if completed.returncode != 0:
+        return {
+            "name": "EdgeStorage",
+            "write_seconds": None,
+            "records_per_second": 0,
+            "disk_usage_bytes": 0,
+            "query_latency_ms": 0,
+            "readback_count": 0,
+            "correctness": False,
+            "compression_ratio": None,
+            "note": completed.stderr.strip() or "edgestorage_benchmark failed"
+        }
+
+    metrics = parse_benchmark_output(completed.stdout)
+
+    write_seconds = float(metrics.get("compressed_write_seconds", 0))
+    records_per_second = float(metrics.get("compressed_write_records_per_sec", 0))
+    disk_usage_bytes = int(metrics.get("compressed_size_bytes", 0))
+    query_latency_ms = float(metrics.get("query_latency_ms", 0))
+    readback_count = int(metrics.get("query_result_count", 0))
+    compression_ratio = float(metrics.get("compression_ratio", 0))
+    uncompressed_size_bytes = int(metrics.get("uncompressed_size_bytes", 0))
+    compressed_size_bytes = int(metrics.get("compressed_size_bytes", 0))
+
+    return {
+        "name": "EdgeStorage",
+        "write_seconds": write_seconds,
+        "records_per_second": records_per_second,
+        "disk_usage_bytes": disk_usage_bytes,
+        "query_latency_ms": query_latency_ms,
+        "readback_count": readback_count,
+        "correctness": readback_count == records,
+        "compression_ratio": compression_ratio,
+        "uncompressed_size_bytes": uncompressed_size_bytes,
+        "compressed_size_bytes": compressed_size_bytes,
+        "note": "Measured via native C benchmark executable (compressed write path).",
     }
 
 def parse_benchmark_output(stdout: str):
@@ -371,11 +465,15 @@ def generate_html_report(summary, output_path: Path):
     rows = ""
 
     for result in summary["results"]:
+        compression_ratio = result.get("compression_ratio")
+        compression_ratio_display = f'{compression_ratio:.3f}x' if compression_ratio else "-"
+
         rows += f"""
         <tr>
             <td>{result["name"]}</td>
             <td>{result["records_per_second"]:,.0f} rec/s</td>
             <td>{format_bytes(result["disk_usage_bytes"])}</td>
+            <td>{compression_ratio_display}</td>
             <td>{result["query_latency_ms"]:.3f} ms</td>
             <td>{"OK" if result["correctness"] else "FAILED"}</td>
         </tr>
@@ -492,7 +590,8 @@ def generate_html_report(summary, output_path: Path):
                 <th>Storage Method</th>
                 <th>Write Throughput</th>
                 <th>Disk Usage</th>
-                <th>GPS Query Latency</th>
+                <th>Compression Ratio</th>
+                <th>Query Latency</th>
                 <th>Readback</th>
             </tr>
         </thead>
