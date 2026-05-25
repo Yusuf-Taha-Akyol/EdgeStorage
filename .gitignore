@@ -79,3 +79,6 @@ edgestorage_smoke_test
 benchmark_testdata/
 benchmark_batch_testdata/
 benchmark_compressed_testdata/
+
+# Generated benchmark/demo outputs
+demo_output/
