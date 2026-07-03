@@ -218,6 +218,13 @@ es_status_t es_storage_reader_query_range(
         es_compression_context_init(&compression_ctx);
 
         while(1) {
+            if (header.camera_stream_offset > 0) {
+                long pos = ftell(file);
+                if (pos >= (long)header.camera_stream_offset) {
+                    break;
+                }
+            }
+
             es_record_t record;
             es_status_t read_status = header.compression_mode == ES_SEGMENT_COMPRESSION_TIMESTAMP_DELTA
                 ? es_compression_read_record(

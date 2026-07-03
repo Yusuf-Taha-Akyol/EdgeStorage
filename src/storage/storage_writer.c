@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <errno.h>
@@ -120,6 +121,16 @@ static es_status_t es_storage_writer_open_active_segment(
         return ES_ERR_IO;
     }
 
+    // Set up active camera path
+    snprintf(state->active_camera_path, sizeof(state->active_camera_path), "%s.cam", state->active_segment_path);
+    state->camera_stream_size_bytes = 0;
+    state->active_camera_file = fopen(state->active_camera_path, state->active_segment_size_bytes == 0 ? "wb" : "ab");
+    if(!state->active_camera_file) {
+        fclose(state->active_segment_file);
+        state->active_segment_file = NULL;
+        return ES_ERR_IO;
+    }
+
     if(state->active_segment_size_bytes == 0) {
         es_segment_header_t header = {
             .magic = ES_SEGMENT_MAGIC,
@@ -132,7 +143,7 @@ static es_status_t es_storage_writer_open_active_segment(
             ),
             .record_format_version = ES_RECORD_FORMAT_VERSION,
             .flags = 0,
-            .reserved = 0
+            .camera_stream_offset = 0
         };
 
         es_status_t status = es_segment_format_write_header(
@@ -141,6 +152,9 @@ static es_status_t es_storage_writer_open_active_segment(
         );
 
         if(status != ES_OK) {
+            fclose(state->active_camera_file);
+            state->active_camera_file = NULL;
+            remove(state->active_camera_path);
             return status;
         }
 
@@ -158,8 +172,42 @@ static void es_storage_writer_close_active_segment(
     }
 
     if(state->active_segment_file) {
+        if(state->active_camera_file) {
+            fclose(state->active_camera_file);
+            state->active_camera_file = NULL;
+        }
+
+        // Close the segment file first (was open in "ab" mode)
         fclose(state->active_segment_file);
         state->active_segment_file = NULL;
+
+        if(state->camera_stream_size_bytes > 0) {
+            // 1. Open in "r+b" to overwrite the header offset
+            FILE* update_file = fopen(state->active_segment_path, "r+b");
+            if(update_file) {
+                uint32_t offset = (uint32_t)state->active_segment_size_bytes;
+                fseek(update_file, offsetof(es_segment_header_t, camera_stream_offset), SEEK_SET);
+                fwrite(&offset, sizeof(offset), 1, update_file);
+                fclose(update_file);
+            }
+
+            // 2. Open in "ab" to append the camera stream bytes
+            FILE* append_file = fopen(state->active_segment_path, "ab");
+            FILE* cam_file = fopen(state->active_camera_path, "rb");
+            if(append_file && cam_file) {
+                char copy_buf[4096];
+                size_t read_bytes;
+                while((read_bytes = fread(copy_buf, 1, sizeof(copy_buf), cam_file)) > 0) {
+                    fwrite(copy_buf, 1, read_bytes, append_file);
+                }
+            }
+            if(append_file) fclose(append_file);
+            if(cam_file) fclose(cam_file);
+            
+            remove(state->active_camera_path);
+        } else {
+            remove(state->active_camera_path);
+        }
     }
 }
 
@@ -239,7 +287,7 @@ static es_status_t es_storage_writer_prepare_for_append(
 
     size_t current_segment_size = state->active_segment_size_bytes == 0
         ? sizeof(es_segment_header_t)
-        : state->active_segment_size_bytes;
+        : state->active_segment_size_bytes + state->camera_stream_size_bytes;
 
     if(current_segment_size + record_size > engine->config.segment_size_bytes) {
         return es_storage_writer_rollover_segment(state);
@@ -362,6 +410,9 @@ es_status_t es_storage_writer_register_stream(
     state->active_segment_file = NULL;
     state->stream_dir_path[0] = '\0';
     state->active_segment_path[0] = '\0';
+    state->active_camera_file = NULL;
+    state->active_camera_path[0] = '\0';
+    state->camera_stream_size_bytes = 0;
 
     es_status_t path_status = es_storage_writer_build_stream_dir_path(
         engine,
@@ -487,5 +538,84 @@ es_status_t es_storage_writer_append_batch(
         }
     }
 
+    return ES_OK;
+}
+
+static es_status_t es_storage_writer_prepare_for_camera_append(
+    const es_engine_t* engine,
+    es_stream_storage_state_t* state,
+    size_t frame_size
+) {
+    if(!engine || !state) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    size_t current_total_size = state->active_segment_size_bytes == 0
+        ? sizeof(es_segment_header_t)
+        : state->active_segment_size_bytes + state->camera_stream_size_bytes;
+
+    if(current_total_size + frame_size > engine->config.segment_size_bytes) {
+        return es_storage_writer_rollover_segment(state);
+    }
+
+    return ES_OK;
+}
+
+es_status_t es_storage_writer_append_camera_frame(
+    es_engine_t* engine,
+    uint32_t stream_id,
+    uint64_t timestamp_ns,
+    uint32_t frame_index,
+    uint32_t jpeg_size,
+    const void* jpeg_bytes
+) {
+    if(!engine || stream_id == 0 || jpeg_size == 0 || !jpeg_bytes) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    es_stream_storage_state_t* state = 
+        es_storage_writer_find_stream_state(engine, stream_id);
+
+    if(!state) {
+        return ES_ERR_NOT_FOUND;
+    }
+
+    size_t frame_size = sizeof(timestamp_ns) + sizeof(frame_index) + sizeof(jpeg_size) + jpeg_size;
+
+    es_status_t status = es_storage_writer_prepare_for_camera_append(engine, state, frame_size);
+    if(status != ES_OK) {
+        return status;
+    }
+
+    status = es_storage_writer_open_active_segment(engine, state);
+    if(status != ES_OK) {
+        return status;
+    }
+
+    if(!state->active_camera_file) {
+        return ES_ERR_IO;
+    }
+
+    if(fwrite(&timestamp_ns, sizeof(timestamp_ns), 1, state->active_camera_file) != 1) {
+        return ES_ERR_IO;
+    }
+
+    if(fwrite(&frame_index, sizeof(frame_index), 1, state->active_camera_file) != 1) {
+        return ES_ERR_IO;
+    }
+
+    if(fwrite(&jpeg_size, sizeof(jpeg_size), 1, state->active_camera_file) != 1) {
+        return ES_ERR_IO;
+    }
+
+    if(fwrite(jpeg_bytes, 1, jpeg_size, state->active_camera_file) != jpeg_size) {
+        return ES_ERR_IO;
+    }
+
+    if(fflush(state->active_camera_file) != 0) {
+        return ES_ERR_IO;
+    }
+
+    state->camera_stream_size_bytes += frame_size;
     return ES_OK;
 }

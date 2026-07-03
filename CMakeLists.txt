@@ -64,6 +64,10 @@ target_link_libraries(edgestorage_storage_flow_test
     PRIVATE edgestorage
 )
 
+target_include_directories(edgestorage_storage_flow_test
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/internal
+)
+
 add_test(NAME edgestorage_storage_flow_test COMMAND edgestorage_storage_flow_test)
 
 add_executable(edgestorage_compression_delta_test

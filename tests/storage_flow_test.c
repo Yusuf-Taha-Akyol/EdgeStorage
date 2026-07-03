@@ -1,8 +1,10 @@
 #include "edgestorage/edgestorage.h"
+#include "segment_format.h"
 
 #include <stdio.h>
 #include <sys/stat.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef struct {
     float ax, ay, az;
@@ -371,9 +373,124 @@ int main(void) {
         es_close(engine);
         return 1;
     }  
-
+ 
     es_close(engine);
 
+    // --- Camera stream test section ---
+    printf("Starting camera stream integration test...\n");
+    system("rm -rf ./storage_cam_testdata");
+    es_config_t config_cam = {
+        .storage_path = "./storage_cam_testdata",
+        .segment_size_bytes = 1024 * 1024,
+        .write_buffer_size_bytes = 4096,
+        .compression_enabled = 0
+    };
+    es_engine_t* engine_cam = es_open(&config_cam);
+    if (!engine_cam) {
+        printf("FAILED: es_open for camera engine returned NULL\n");
+        return 1;
+    }
+    uint32_t cam_stream_id = 0;
+    if (expect_status(es_register_stream_schema(engine_cam, &schema, &cam_stream_id), ES_OK, "register stream for camera") != 0) {
+        es_close(engine_cam);
+        return 1;
+    }
+
+    if (expect_status(es_write_record(engine_cam, cam_stream_id, &record), ES_OK, "write sensor record") != 0) {
+        es_close(engine_cam);
+        return 1;
+    }
+
+    const char* dummy_jpeg = "JPEG_DATA_DUMMY_123456789";
+    uint32_t dummy_jpeg_size = (uint32_t)strlen(dummy_jpeg);
+    if (expect_status(es_write_camera_frame(engine_cam, cam_stream_id, 2000000, 1, dummy_jpeg_size, dummy_jpeg), ES_OK, "write camera frame") != 0) {
+        es_close(engine_cam);
+        return 1;
+    }
+
+    es_close(engine_cam);
+
+    char cam_seg_path[512];
+    snprintf(cam_seg_path, sizeof(cam_seg_path), "./storage_cam_testdata/stream_%u/segment_000001.seg", cam_stream_id);
+    FILE* seg_file = fopen(cam_seg_path, "rb");
+    if (!seg_file) {
+        printf("FAILED: Segment file not created: %s\n", cam_seg_path);
+        return 1;
+    }
+    es_segment_header_t seg_header;
+    if (fread(&seg_header, sizeof(seg_header), 1, seg_file) != 1) {
+        printf("FAILED: Cannot read segment header\n");
+        fclose(seg_file);
+        return 1;
+    }
+    
+    long expected_offset = (long)sizeof(es_segment_header_t) + 8 + 2 + 2 + 4 + (long)sizeof(imu_payload_t);
+    if ((long)seg_header.camera_stream_offset != expected_offset) {
+        printf("FAILED: Camera stream offset mismatch expected=%ld actual=%u\n", expected_offset, seg_header.camera_stream_offset);
+        fclose(seg_file);
+        return 1;
+    }
+
+    if (fseek(seg_file, seg_header.camera_stream_offset, SEEK_SET) != 0) {
+        printf("FAILED: Cannot seek to camera stream offset\n");
+        fclose(seg_file);
+        return 1;
+    }
+    uint64_t rd_timestamp = 0;
+    uint32_t rd_index = 0;
+    uint32_t rd_jpeg_size = 0;
+    char rd_jpeg[64];
+    if (fread(&rd_timestamp, sizeof(rd_timestamp), 1, seg_file) != 1 ||
+        fread(&rd_index, sizeof(rd_index), 1, seg_file) != 1 ||
+        fread(&rd_jpeg_size, sizeof(rd_jpeg_size), 1, seg_file) != 1) {
+        printf("FAILED: Cannot read camera frame header from segment file\n");
+        fclose(seg_file);
+        return 1;
+    }
+    if (rd_timestamp != 2000000 || rd_index != 1 || rd_jpeg_size != dummy_jpeg_size) {
+        printf("FAILED: Camera frame header values mismatch ts=%llu idx=%u size=%u\n", rd_timestamp, rd_index, rd_jpeg_size);
+        fclose(seg_file);
+        return 1;
+    }
+    if (fread(rd_jpeg, 1, rd_jpeg_size, seg_file) != rd_jpeg_size) {
+        printf("FAILED: Cannot read camera frame JPEG bytes\n");
+        fclose(seg_file);
+        return 1;
+    }
+    rd_jpeg[rd_jpeg_size] = '\0';
+    if (strcmp(rd_jpeg, dummy_jpeg) != 0) {
+        printf("FAILED: Camera frame JPEG content mismatch expected=%s actual=%s\n", dummy_jpeg, rd_jpeg);
+        fclose(seg_file);
+        return 1;
+    }
+    fclose(seg_file);
+
+    engine_cam = es_open(&config_cam);
+    uint32_t temp_id;
+    es_register_stream_schema(engine_cam, &schema, &temp_id);
+
+    es_query_t query = {
+        .stream_id = cam_stream_id,
+        .start_ts_ns = 0,
+        .end_ts_ns = 3000000,
+        .record_type_id = 0,
+        .limit = 10
+    };
+    es_result_t query_res = {0};
+    if (expect_status(es_query_range(engine_cam, &query, &query_res), ES_OK, "query range with camera offset") != 0) {
+        es_close(engine_cam);
+        return 1;
+    }
+    if (query_res.count != 1) {
+        printf("FAILED: Query returned wrong record count expected=1 actual=%zu\n", query_res.count);
+        es_result_free(&query_res);
+        es_close(engine_cam);
+        return 1;
+    }
+    es_result_free(&query_res);
+    es_close(engine_cam);
+    printf("Camera stream integration test passed!\n");
+ 
     printf("storage_flow_test passed\n");
     return 0;
 }

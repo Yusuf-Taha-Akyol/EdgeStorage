@@ -24,7 +24,7 @@ typedef struct {
     uint32_t compression_mode;
     uint32_t record_format_version;
     uint32_t flags;
-    uint32_t reserved;
+    uint32_t camera_stream_offset;
 } es_segment_header_t;
 
 es_status_t es_segment_format_write_header(

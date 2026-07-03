@@ -20,6 +20,10 @@ typedef struct {
     FILE* active_segment_file;
     char stream_dir_path[ES_STORAGE_PATH_MAX];
     char active_segment_path[ES_STORAGE_PATH_MAX];
+
+    FILE* active_camera_file;
+    char active_camera_path[ES_STORAGE_PATH_MAX];
+    size_t camera_stream_size_bytes;
 } es_stream_storage_state_t;
 
 es_status_t es_storage_writer_init(es_engine_t* engine);
@@ -39,6 +43,15 @@ es_status_t es_storage_writer_append_record(
     es_engine_t* engine,
     uint32_t stream_id,
     const es_record_t* record
+);
+
+es_status_t es_storage_writer_append_camera_frame(
+    es_engine_t* engine,
+    uint32_t stream_id,
+    uint64_t timestamp_ns,
+    uint32_t frame_index,
+    uint32_t jpeg_size,
+    const void* jpeg_bytes
 );
 
 es_status_t es_storage_writer_append_batch(

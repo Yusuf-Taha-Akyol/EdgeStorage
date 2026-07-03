@@ -228,6 +228,71 @@ int main(void) {
             if (payload_hex) free(payload_hex);
             if (payload) free(payload);
 
+        } else if (strcmp(cmd, "WRITE_CAMERA_FRAME") == 0) {
+            uint32_t stream_id;
+            uint64_t timestamp_ns;
+            uint32_t frame_index;
+            uint32_t jpeg_size;
+            if (scanf("%u %llu %u %u", &stream_id, &timestamp_ns, &frame_index, &jpeg_size) != 4) {
+                printf("STATUS ERROR Invalid WRITE_CAMERA_FRAME arguments\n");
+                continue;
+            }
+
+            if (!engine) {
+                printf("STATUS ERROR Engine not open\n");
+                continue;
+            }
+
+            uint8_t* jpeg_bytes = NULL;
+            char* jpeg_hex = NULL;
+            int write_success = 1;
+
+            if (jpeg_size > 0) {
+                jpeg_hex = malloc(jpeg_size * 2 + 1);
+                if (!jpeg_hex) {
+                    printf("STATUS ERROR OOM\n");
+                    continue;
+                }
+                if (scanf("%s", jpeg_hex) != 1) {
+                    printf("STATUS ERROR Failed to read jpeg hex\n");
+                    free(jpeg_hex);
+                    continue;
+                }
+
+                jpeg_bytes = malloc(jpeg_size);
+                if (!jpeg_bytes) {
+                    printf("STATUS ERROR OOM\n");
+                    free(jpeg_hex);
+                    continue;
+                }
+
+                for (uint32_t i = 0; i < jpeg_size; ++i) {
+                    unsigned int byte;
+                    if (sscanf(&jpeg_hex[i * 2], "%2x", &byte) != 1) {
+                        write_success = 0;
+                        break;
+                    }
+                    jpeg_bytes[i] = (uint8_t)byte;
+                }
+            }
+
+            if (!write_success) {
+                printf("STATUS ERROR Failed to parse jpeg hex\n");
+                if (jpeg_hex) free(jpeg_hex);
+                if (jpeg_bytes) free(jpeg_bytes);
+                continue;
+            }
+
+            es_status_t status = es_write_camera_frame(engine, stream_id, timestamp_ns, frame_index, jpeg_size, jpeg_bytes);
+            if (status == ES_OK) {
+                printf("STATUS OK\n");
+            } else {
+                printf("STATUS ERROR %d\n", status);
+            }
+
+            if (jpeg_hex) free(jpeg_hex);
+            if (jpeg_bytes) free(jpeg_bytes);
+
         } else if (strcmp(cmd, "QUERY_RANGE") == 0) {
             uint32_t stream_id;
             uint64_t start_ts_ns;

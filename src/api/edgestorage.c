@@ -71,6 +71,29 @@ es_status_t es_write_batch(
     return es_storage_writer_append_batch(engine, stream_id, records, count);
 }
 
+es_status_t es_write_camera_frame(
+    es_engine_t* engine,
+    uint32_t stream_id,
+    uint64_t timestamp_ns,
+    uint32_t frame_index,
+    uint32_t jpeg_size,
+    const void* jpeg_bytes
+) {
+    if(!engine || stream_id == 0 || jpeg_size == 0 || !jpeg_bytes) {
+        return ES_ERR_INVALID_ARG;
+    }
+
+    if(!es_runtime_is_open(engine)) {
+        return ES_ERR_INTERNAL;
+    }
+
+    if(!es_stream_registry_contains(engine, stream_id)) {
+        return ES_ERR_NOT_FOUND;
+    }
+
+    return es_storage_writer_append_camera_frame(engine, stream_id, timestamp_ns, frame_index, jpeg_size, jpeg_bytes);
+}
+
 es_status_t es_query_range(
     es_engine_t* engine,
     const es_query_t* query,

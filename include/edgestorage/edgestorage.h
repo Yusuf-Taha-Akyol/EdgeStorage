@@ -115,6 +115,15 @@ es_status_t es_write_batch(
     size_t count
 );
 
+es_status_t es_write_camera_frame(
+    es_engine_t* engine,
+    uint32_t stream_id,
+    uint64_t timestamp_ns,
+    uint32_t frame_index,
+    uint32_t jpeg_size,
+    const void* jpeg_bytes
+);
+
 es_status_t es_query_range(
     es_engine_t* engine,
     const es_query_t* query,
