@@ -3,13 +3,30 @@ const bodyParser = require('body-parser');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const zlib = require('zlib');
+const http = require('http');
 
 const app = express();
+
+// CORS Middleware to allow requests from the dashboard (port 4000)
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, x-device-id, x-api-key');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+});
+
 app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 const STORAGE_PATH = process.env.STORAGE_PATH || path.join(__dirname, '..', 'data');
 const BACKEND_BIN = path.join(__dirname, '..', 'build', 'edgestorage_server_backend');
+const DEVICE_ID = process.env.DEVICE_ID || 'drone-01';
+const API_KEY = process.env.API_KEY || 'api-key-drone-01';
+const CLOUD_URL = process.env.CLOUD_URL || 'http://localhost:4000';
 
 // Ensure storage directory exists
 if (!fs.existsSync(STORAGE_PATH)) {
@@ -256,6 +273,289 @@ function sendCommand(cmdStr) {
     });
 }
 
+// Sync engine state variables
+let simulatedOnline = true; // Controlled via POST /local/connectivity
+let connectionStatus = 'offline'; // Actual ping status
+let syncBackoffMs = 3000; // Base check interval / current backoff
+const BASE_BACKOFF_MS = 3000;
+const MAX_BACKOFF_MS = 30000;
+
+// Cursor file path for resumption
+const SYNC_STATE_FILE = path.join(STORAGE_PATH, 'sync_state.json');
+let syncState = { last_synced_timestamp: '0' };
+
+function loadSyncState() {
+    if (fs.existsSync(SYNC_STATE_FILE)) {
+        try {
+            syncState = JSON.parse(fs.readFileSync(SYNC_STATE_FILE, 'utf8'));
+            console.log(`[Sync] Loaded sync state. Last synced timestamp: ${syncState.last_synced_timestamp}`);
+        } catch (e) {
+            console.error('[Sync] Error loading sync state:', e);
+        }
+    } else {
+        saveSyncState();
+    }
+}
+
+function saveSyncState() {
+    try {
+        fs.writeFileSync(SYNC_STATE_FILE, JSON.stringify(syncState, null, 2), 'utf8');
+    } catch (e) {
+        console.error('[Sync] Error saving sync state:', e);
+    }
+}
+
+function postToCloud(urlPath, headers, bodyBuffer) {
+    return new Promise((resolve, reject) => {
+        try {
+            const parsedUrl = new URL(CLOUD_URL);
+            const options = {
+                hostname: parsedUrl.hostname,
+                port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+                path: urlPath,
+                method: 'POST',
+                headers: {
+                    ...headers,
+                    'Content-Length': bodyBuffer.length
+                }
+            };
+
+            const req = http.request(options, (res) => {
+                let data = '';
+                res.on('data', (chunk) => data += chunk);
+                res.on('end', () => {
+                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                        try {
+                            const parsed = JSON.parse(data);
+                            resolve({ status: res.statusCode, body: parsed });
+                        } catch (e) {
+                            resolve({ status: res.statusCode, body: data });
+                        }
+                    } else {
+                        reject(new Error(`Server returned status code ${res.statusCode}: ${data}`));
+                    }
+                });
+            });
+
+            req.on('error', (err) => reject(err));
+            req.write(bodyBuffer);
+            req.end();
+        } catch (err) {
+            reject(err);
+        }
+    });
+}
+
+function pingCloud() {
+    return new Promise((resolve) => {
+        if (!simulatedOnline) {
+            return resolve(false);
+        }
+        try {
+            const parsedUrl = new URL(CLOUD_URL);
+            const options = {
+                hostname: parsedUrl.hostname,
+                port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+                path: '/api/cloud/ping',
+                method: 'GET',
+                timeout: 2000
+            };
+
+            const req = http.request(options, (res) => {
+                if (res.statusCode === 200) {
+                    resolve(true);
+                } else {
+                    resolve(false);
+                }
+            });
+
+            req.on('error', () => resolve(false));
+            req.on('timeout', () => {
+                req.destroy();
+                resolve(false);
+            });
+            req.end();
+        } catch (err) {
+            resolve(false);
+        }
+    });
+}
+
+async function queryUnsyncedRecords(limit = 100) {
+    const lastTs = BigInt(syncState.last_synced_timestamp);
+    const startTs = (lastTs + 1n).toString();
+    const endTs = '18446744073709551615'; // Max uint64
+
+    const device = devices[DEVICE_ID];
+    if (!device) {
+        return { records: [], totalPending: 0 };
+    }
+
+    const streamId = device.stream_id;
+
+    // Run query command
+    const cmd = `QUERY_RANGE ${streamId} ${startTs} ${endTs} 0 ${limit}`;
+    const responses = await sendCommand(cmd);
+
+    const firstLine = responses[0];
+    if (!firstLine.startsWith('STATUS OK')) {
+        throw new Error(`Failed to query local database: ${firstLine}`);
+    }
+
+    const parts = firstLine.split(' ');
+    const count = parseInt(parts[2], 10) || 0;
+
+    const records = [];
+    for (let i = 1; i < responses.length; i++) {
+        const lineParts = responses[i].split(' ');
+        if (lineParts[0] !== 'RECORD') continue;
+
+        const ts = lineParts[1];
+        const rtId = parseInt(lineParts[2], 10);
+        const flags = parseInt(lineParts[3], 10);
+        const pSize = parseInt(lineParts[4], 10);
+        const pHex = lineParts[5];
+
+        let payloadDecoded = null;
+        const recordType = device.record_types.find(rt => rt.id === rtId);
+        if (recordType && pSize > 0 && pHex) {
+            try {
+                const buf = Buffer.from(pHex, 'hex');
+                payloadDecoded = unpackPayload(recordType.fields, buf);
+            } catch (err) {
+                payloadDecoded = { error: `Decoding error: ${err.message}`, raw_hex: pHex };
+            }
+        }
+
+        records.push({
+            timestamp_ns: ts,
+            record_type_id: rtId,
+            flags: flags,
+            payload_size: pSize,
+            payload_hex: pHex,
+            payload_decoded: payloadDecoded
+        });
+    }
+
+    let totalPending = count;
+    if (count >= limit) {
+        const countCmd = `QUERY_RANGE ${streamId} ${startTs} ${endTs} 0 5000`;
+        const countResponses = await sendCommand(countCmd);
+        if (countResponses[0].startsWith('STATUS OK')) {
+            totalPending = parseInt(countResponses[0].split(' ')[2], 10) || 0;
+        }
+    }
+
+    return { records, totalPending };
+}
+
+let isSyncing = false;
+let totalPendingRecords = 0;
+
+async function syncStep() {
+    if (isSyncing) return;
+    isSyncing = true;
+
+    try {
+        const isOnline = await pingCloud();
+        connectionStatus = isOnline ? 'online' : 'offline';
+
+        if (!isOnline) {
+            syncBackoffMs = Math.min(syncBackoffMs * 2, MAX_BACKOFF_MS);
+            const countInfo = await queryUnsyncedRecords(1).catch(() => ({ records: [], totalPending: 0 }));
+            totalPendingRecords = countInfo.totalPending;
+            isSyncing = false;
+            scheduleNextSync();
+            return;
+        }
+
+        const batchSize = 100;
+        const { records, totalPending } = await queryUnsyncedRecords(batchSize);
+        totalPendingRecords = totalPending;
+
+        if (records.length === 0) {
+            syncBackoffMs = BASE_BACKOFF_MS;
+            isSyncing = false;
+            scheduleNextSync();
+            return;
+        }
+
+        console.log(`[Sync] Found ${records.length} records to sync (Total pending: ${totalPending})`);
+
+        const syncPayload = {
+            device_id: DEVICE_ID,
+            schema_version: devices[DEVICE_ID] ? devices[DEVICE_ID].schema_version : 1,
+            record_types: devices[DEVICE_ID] ? devices[DEVICE_ID].record_types : [],
+            records: records
+        };
+
+        const jsonStr = JSON.stringify(syncPayload);
+        const compressedBuf = zlib.gzipSync(Buffer.from(jsonStr, 'utf8'));
+
+        const headers = {
+            'x-device-id': DEVICE_ID,
+            'x-api-key': API_KEY,
+            'content-type': 'application/json',
+            'content-encoding': 'gzip'
+        };
+
+        const response = await postToCloud('/api/cloud/sync', headers, compressedBuf);
+
+        if (response.body && response.body.status === 'success') {
+            const lastRecordTs = response.body.last_record_ts;
+            if (lastRecordTs) {
+                console.log(`[Sync] Batch sync successful. ACK last record: ${lastRecordTs}`);
+                syncState.last_synced_timestamp = lastRecordTs;
+                saveSyncState();
+            }
+            syncBackoffMs = BASE_BACKOFF_MS;
+            isSyncing = false;
+            setImmediate(syncStep);
+        } else {
+            throw new Error(`Sync rejected: ${JSON.stringify(response.body)}`);
+        }
+
+    } catch (err) {
+        console.error(`[Sync] Error during sync: ${err.message}`);
+        syncBackoffMs = Math.min(syncBackoffMs * 2, MAX_BACKOFF_MS);
+        isSyncing = false;
+        scheduleNextSync();
+    }
+}
+
+let syncTimeoutId = null;
+function scheduleNextSync() {
+    if (syncTimeoutId) clearTimeout(syncTimeoutId);
+    syncTimeoutId = setTimeout(syncStep, syncBackoffMs);
+}
+
+// Default Schema to auto-register on startup
+const defaultSchema = {
+    name: DEVICE_ID,
+    schema_version: 1,
+    record_types: [
+        {
+            id: 1,
+            name: 'flight_telemetry',
+            fields: [
+                { id: 1, name: 'altitude', type: 'f32', compression: 'none' },
+                { id: 2, name: 'latitude', type: 'f64', compression: 'none' },
+                { id: 3, name: 'longitude', type: 'f64', compression: 'none' },
+                { id: 4, name: 'speed', type: 'f32', compression: 'none' },
+                { id: 5, name: 'battery_level', type: 'i32', compression: 'none' }
+            ]
+        },
+        {
+            id: 2,
+            name: 'system_log',
+            fields: [
+                { id: 1, name: 'log_level', type: 'u8', compression: 'none' },
+                { id: 2, name: 'code', type: 'u16', compression: 'none' }
+            ]
+        }
+    ]
+};
+
 async function initializeSystem() {
     startBackend();
 
@@ -272,6 +572,12 @@ async function initializeSystem() {
         }
         console.log('EdgeStorage engine opened successfully.');
 
+        // Auto-register default schema if not exists
+        if (!devices[DEVICE_ID]) {
+            console.log(`[Startup] Auto-registering default schema for device '${DEVICE_ID}'...`);
+            devices[DEVICE_ID] = defaultSchema;
+        }
+
         // 2. Re-register all persistent devices
         const deviceNames = Object.keys(devices);
         if (deviceNames.length > 0) {
@@ -284,6 +590,11 @@ async function initializeSystem() {
             }
             fs.writeFileSync(DEVICES_FILE, JSON.stringify(devices, null, 2), 'utf8');
         }
+
+        // 3. Initialize Sync Engine
+        loadSyncState();
+        scheduleNextSync();
+
     } catch (e) {
         console.error('Failed to initialize EdgeStorage system:', e);
     }
@@ -314,6 +625,40 @@ async function registerDeviceInEngine(device) {
 }
 
 // REST Endpoints
+
+// Local control: get sync and connection status
+app.get('/local/status', async (req, res) => {
+    try {
+        const countInfo = await queryUnsyncedRecords(1).catch(() => ({ records: [], totalPending: 0 }));
+        res.json({
+            device_id: DEVICE_ID,
+            simulated_online: simulatedOnline,
+            connection_status: connectionStatus,
+            pending_records: countInfo.totalPending,
+            last_synced_timestamp: syncState.last_synced_timestamp,
+            backoff_ms: syncBackoffMs,
+            cloud_url: CLOUD_URL
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Local control: toggle simulated connectivity
+app.post('/local/connectivity', (req, res) => {
+    const { online } = req.body;
+    if (online !== undefined) {
+        simulatedOnline = !!online;
+        console.log(`[Connectivity Monitor] Connectivity manually set to: ${simulatedOnline ? 'ONLINE' : 'OFFLINE'}`);
+        if (simulatedOnline) {
+            syncBackoffMs = BASE_BACKOFF_MS;
+            setImmediate(syncStep);
+        }
+        res.json({ success: true, simulated_online: simulatedOnline });
+    } else {
+        res.status(400).json({ error: 'Missing online parameter' });
+    }
+});
 
 // 1. Device Creation (POST /devices)
 app.post('/devices', async (req, res) => {

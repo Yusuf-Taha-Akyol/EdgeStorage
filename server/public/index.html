@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EdgeStorage Multi-Drone Sync Control Center</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(17, 24, 39, 0.65);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --primary: #6366f1;
+            --primary-glow: rgba(99, 102, 241, 0.35);
+            --success: #10b981;
+            --success-glow: rgba(16, 185, 129, 0.3);
+            --danger: #ef4444;
+            --danger-glow: rgba(239, 68, 68, 0.3);
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            overflow-x: hidden;
+            min-height: 100vh;
+            background-image: 
+                radial-gradient(at 10% 20%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 90% 80%, rgba(16, 185, 129, 0.08) 0px, transparent 50%);
+        }
+
+        header {
+            padding: 2rem 4rem 1rem 4rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--card-border);
+            backdrop-filter: blur(10px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(11, 15, 25, 0.8);
+        }
+
+        .header-title h1 {
+            font-size: 1.8rem;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(to right, #a5b4fc, #6366f1, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-title p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: 0.2rem;
+        }
+
+        .header-controls {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid var(--card-border);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-1px);
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .btn-primary:hover {
+            background: #4f46e5;
+            box-shadow: 0 0 15px var(--primary-glow);
+        }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: var(--danger);
+            color: #f87171;
+        }
+
+        .btn-danger:hover {
+            background: var(--danger);
+            color: white;
+            box-shadow: 0 0 15px var(--danger-glow);
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 2rem 4rem;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2.5rem;
+        }
+
+        @media (max-width: 1100px) {
+            .container {
+                grid-template-columns: 1fr;
+                padding: 2rem;
+            }
+            header {
+                padding: 1.5rem;
+            }
+        }
+
+        .section-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .section-title span.badge {
+            font-size: 0.75rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 12px;
+            background: rgba(99, 102, 241, 0.2);
+            color: #a5b4fc;
+        }
+
+        /* Drone List Grid */
+        .drone-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+        }
+
+        .drone-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            position: relative;
+            transition: border-color 0.3s;
+        }
+
+        .drone-card.active-border {
+            border-color: rgba(99, 102, 241, 0.4);
+        }
+
+        .drone-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .drone-info h3 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-dot.online {
+            background-color: var(--success);
+            box-shadow: 0 0 10px var(--success-glow);
+            animation: pulse-green 1.5s infinite alternate;
+        }
+
+        .status-dot.offline {
+            background-color: var(--danger);
+            box-shadow: 0 0 10px var(--danger-glow);
+        }
+
+        @keyframes pulse-green {
+            0% { transform: scale(0.95); box-shadow: 0 0 4px var(--success-glow); }
+            100% { transform: scale(1.15); box-shadow: 0 0 12px var(--success-glow); }
+        }
+
+        .drone-meta {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .connection-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 0.4rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            border: 1px solid var(--card-border);
+        }
+
+        /* Toggle switch */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #374151;
+            transition: .3s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--success);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+
+        .drone-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 1rem;
+            margin: 1.2rem 0;
+        }
+
+        .stat-box {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 12px;
+            padding: 0.8rem;
+            text-align: center;
+        }
+
+        .stat-box .label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 0.3rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-box .val {
+            font-size: 1.1rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .val.alert-count {
+            color: #fb7185;
+            animation: bounce-alert 1s infinite alternate;
+        }
+
+        @keyframes bounce-alert {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-2px); }
+        }
+
+        .drone-actions {
+            display: flex;
+            gap: 0.8rem;
+        }
+
+        .drone-actions button {
+            flex: 1;
+        }
+
+        /* Flight simulation state indicator */
+        .flight-indicator {
+            position: absolute;
+            top: 0;
+            right: 2rem;
+            transform: translateY(-50%);
+            background: rgba(99, 102, 241, 0.9);
+            color: white;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            padding: 0.2rem 0.6rem;
+            border-radius: 10px;
+            letter-spacing: 1px;
+            display: none;
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        .drone-card.flying .flight-indicator {
+            display: block;
+            animation: pulse-blue 1s infinite alternate;
+        }
+
+        @keyframes pulse-blue {
+            0% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        /* Right Column Dashboard */
+        .cloud-monitor {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .monitor-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .cloud-stats-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 280px;
+            width: 100%;
+        }
+
+        /* Logs console */
+        .logs-console {
+            background: rgba(10, 10, 18, 0.95);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            height: 250px;
+            overflow-y: auto;
+            color: #a7f3d0;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+        }
+
+        .log-entry {
+            margin-bottom: 0.4rem;
+            line-height: 1.4;
+            display: flex;
+        }
+
+        .log-entry .time {
+            color: #6b7280;
+            margin-right: 0.8rem;
+            flex-shrink: 0;
+        }
+
+        .log-entry .device {
+            font-weight: 700;
+            margin-right: 0.5rem;
+            flex-shrink: 0;
+        }
+
+        .log-entry.info { color: #93c5fd; }
+        .log-entry.success { color: #34d399; }
+        .log-entry.warn { color: #fcd34d; }
+        .log-entry.error { color: #fca5a5; }
+
+        .metric-select-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .select-input {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            color: var(--text-main);
+            padding: 0.4rem 0.8rem;
+            font-size: 0.85rem;
+            outline: none;
+        }
+
+        .select-input option {
+            background: var(--bg-color);
+            color: var(--text-main);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-title">
+            <h1>EdgeStorage Control Center</h1>
+            <p>Offline-First Telemetry Sync Simulation & Analytics</p>
+        </div>
+        <div class="header-controls">
+            <button class="btn btn-danger" onclick="resetSimulation()">Reset System</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Left Column: Edge Devices -->
+        <div>
+            <div class="section-title">
+                Edge Devices (Drones) <span class="badge">Local Engine</span>
+            </div>
+            
+            <div class="drone-grid">
+                <!-- Drone 1 -->
+                <div class="drone-card" id="card-drone-01">
+                    <div class="flight-indicator">Flying</div>
+                    <div class="drone-header">
+                        <div class="drone-info">
+                            <h3><span class="status-dot offline" id="dot-drone-01"></span> Drone-01</h3>
+                            <span class="drone-meta" id="meta-drone-01">ID: drone-01 | Port: 3001</span>
+                        </div>
+                        <div class="connection-toggle">
+                            <span>Connection</span>
+                            <label class="switch">
+                                <input type="checkbox" id="conn-drone-01" checked onchange="toggleConnectivity('drone-01', 3001, this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="drone-stats">
+                        <div class="stat-box">
+                            <div class="label">Local Queue</div>
+                            <div class="val" id="queue-drone-01">0</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="label">Last Sync</div>
+                            <div class="val" id="sync-drone-01">Never</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="label">Backoff Wait</div>
+                            <div class="val" id="backoff-drone-01">3s</div>
+                        </div>
+                    </div>
+
+                    <div class="drone-actions">
+                        <button class="btn" onclick="generateSingleTelemetry('drone-01', 3001)">Write Telemetry</button>
+                        <button class="btn btn-primary" id="fly-drone-01" onclick="toggleFlight('drone-01', 3001)">Fly Drone</button>
+                    </div>
+                </div>
+
+                <!-- Drone 2 -->
+                <div class="drone-card" id="card-drone-02">
+                    <div class="flight-indicator">Flying</div>
+                    <div class="drone-header">
+                        <div class="drone-info">
+                            <h3><span class="status-dot offline" id="dot-drone-02"></span> Drone-02</h3>
+                            <span class="drone-meta" id="meta-drone-02">ID: drone-02 | Port: 3002</span>
+                        </div>
+                        <div class="connection-toggle">
+                            <span>Connection</span>
+                            <label class="switch">
+                                <input type="checkbox" id="conn-drone-02" checked onchange="toggleConnectivity('drone-02', 3002, this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="drone-stats">
+                        <div class="stat-box">
+                            <div class="label">Local Queue</div>
+                            <div class="val" id="queue-drone-02">0</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="label">Last Sync</div>
+                            <div class="val" id="sync-drone-02">Never</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="label">Backoff Wait</div>
+                            <div class="val" id="backoff-drone-02">3s</div>
+                        </div>
+                    </div>
+
+                    <div class="drone-actions">
+                        <button class="btn" onclick="generateSingleTelemetry('drone-02', 3002)">Write Telemetry</button>
+                        <button class="btn btn-primary" id="fly-drone-02" onclick="toggleFlight('drone-02', 3002)">Fly Drone</button>
+                    </div>
+                </div>
+
+                <!-- Drone 3 -->
+                <div class="drone-card" id="card-drone-03">
+                    <div class="flight-indicator">Flying</div>
+                    <div class="drone-header">
+                        <div class="drone-info">
+                            <h3><span class="status-dot offline" id="dot-drone-03"></span> Drone-03</h3>
+                            <span class="drone-meta" id="meta-drone-03">ID: drone-03 | Port: 3003</span>
+                        </div>
+                        <div class="connection-toggle">
+                            <span>Connection</span>
+                            <label class="switch">
+                                <input type="checkbox" id="conn-drone-03" checked onchange="toggleConnectivity('drone-03', 3003, this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="drone-stats">
+                        <div class="stat-box">
+                            <div class="label">Local Queue</div>
+                            <div class="val" id="queue-drone-03">0</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="label">Last Sync</div>
+                            <div class="val" id="sync-drone-03">Never</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="label">Backoff Wait</div>
+                            <div class="val" id="backoff-drone-03">3s</div>
+                        </div>
+                    </div>
+
+                    <div class="drone-actions">
+                        <button class="btn" onclick="generateSingleTelemetry('drone-03', 3003)">Write Telemetry</button>
+                        <button class="btn btn-primary" id="fly-drone-03" onclick="toggleFlight('drone-03', 3003)">Fly Drone</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Cloud Analytics & Live Logs -->
+        <div class="cloud-monitor">
+            <div class="monitor-card">
+                <div class="cloud-stats-header">
+                    <div class="section-title" style="margin-bottom: 0;">
+                        Cloud Ingest Analytics <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399;">Active</span>
+                    </div>
+                    <div class="metric-select-container">
+                        <span style="font-size: 0.8rem; color: var(--text-muted)">Metric:</span>
+                        <select class="select-input" id="chart-metric" onchange="updateChartMetric()">
+                            <option value="altitude">Altitude (m)</option>
+                            <option value="speed">Speed (m/s)</option>
+                            <option value="battery_level">Battery Level (%)</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="chart-container">
+                    <canvas id="telemetryChart"></canvas>
+                </div>
+            </div>
+
+            <div class="monitor-card">
+                <div class="section-title">
+                    System Control Log Feed
+                </div>
+                <div class="logs-console" id="log-console">
+                    <div class="log-entry info">
+                        <span class="time">10:58:26</span>
+                        <span class="device">[SYSTEM]</span>
+                        <span>Multi-drone dashboard interface loaded. Ready.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Drone ports mapping
+        const DRONE_PORTS = {
+            'drone-01': 3001,
+            'drone-02': 3002,
+            'drone-03': 3003
+        };
+
+        // Telemetry flight states
+        const flightStates = {
+            'drone-01': { active: false, timer: null, alt: 0, lat: 39.9042, lon: 32.8597, bat: 100, speed: 0, heading: 0 },
+            'drone-02': { active: false, timer: null, alt: 0, lat: 39.9325, lon: 32.8020, bat: 100, speed: 0, heading: 120 },
+            'drone-03': { active: false, timer: null, alt: 0, lat: 39.8660, lon: 32.7480, bat: 100, speed: 0, heading: 240 }
+        };
+
+        // Log to console
+        function addLog(device, message, type = 'info') {
+            const consoleEl = document.getElementById('log-console');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            
+            const timeStr = new Date().toLocaleTimeString();
+            entry.innerHTML = `<span class="time">${timeStr}</span><span class="device">[${device.toUpperCase()}]</span><span>${message}</span>`;
+            
+            consoleEl.appendChild(entry);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+
+            // Keep logs capped at 100 lines
+            if (consoleEl.children.length > 100) {
+                consoleEl.removeChild(consoleEl.firstChild);
+            }
+        }
+
+        // Fetch local status for a drone
+        async function fetchDroneStatus(deviceId, port) {
+            try {
+                const res = await fetch(`http://localhost:${port}/local/status`);
+                if (!res.ok) throw new Error();
+                const status = await res.json();
+                
+                // Update UI elements
+                const dot = document.getElementById(`dot-${deviceId}`);
+                if (status.connection_status === 'online') {
+                    dot.className = 'status-dot online';
+                } else {
+                    dot.className = 'status-dot offline';
+                }
+
+                // Update queue size
+                const queueVal = document.getElementById(`queue-${deviceId}`);
+                const oldQueue = parseInt(queueVal.textContent, 10) || 0;
+                queueVal.textContent = status.pending_records;
+                
+                if (status.pending_records > oldQueue) {
+                    // Queue increased, show alert styling
+                    queueVal.className = 'val alert-count';
+                } else if (status.pending_records === 0) {
+                    queueVal.className = 'val';
+                }
+
+                // Update last sync time
+                const syncVal = document.getElementById(`sync-${deviceId}`);
+                if (status.last_synced_timestamp !== '0') {
+                    const syncDate = new Date(Number(BigInt(status.last_synced_timestamp) / 1000000n));
+                    syncVal.textContent = syncDate.toLocaleTimeString();
+                } else {
+                    syncVal.textContent = 'Never';
+                }
+
+                // Update backoff
+                document.getElementById(`backoff-${deviceId}`).textContent = `${(status.backoff_ms / 1000).toFixed(0)}s`;
+
+                // Set switch state
+                document.getElementById(`conn-${deviceId}`).checked = status.simulated_online;
+            } catch (err) {
+                // Drone is offline/not running
+                document.getElementById(`dot-${deviceId}`).className = 'status-dot offline';
+                document.getElementById(`queue-${deviceId}`).textContent = 'ERR';
+                document.getElementById(`queue-${deviceId}`).className = 'val';
+                document.getElementById(`sync-${deviceId}`).textContent = 'Offline';
+            }
+        }
+
+        // Toggle connection via edge local endpoint
+        async function toggleConnectivity(deviceId, port, online) {
+            try {
+                const res = await fetch(`http://localhost:${port}/local/connectivity`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ online })
+                });
+                if (res.ok) {
+                    addLog(deviceId, `Simulated connection toggled to: ${online ? 'ONLINE' : 'OFFLINE'}`, online ? 'success' : 'warn');
+                    fetchDroneStatus(deviceId, port);
+                }
+            } catch (e) {
+                addLog(deviceId, `Failed to toggle connection. Edge node might not be running.`, 'error');
+            }
+        }
+
+        // Generate a single telemetry record on the edge node
+        async function generateSingleTelemetry(deviceId, port) {
+            try {
+                const state = flightStates[deviceId];
+                const now = Date.now() * 1000000; // ns
+
+                // Generate telemetry with small variance
+                const payload = {
+                    device_name: deviceId,
+                    record_type_id: 1,
+                    timestamp_ns: String(now),
+                    payload: {
+                        altitude: parseFloat((state.alt + Math.random() * 2 - 1).toFixed(2)),
+                        latitude: parseFloat((state.lat + Math.random() * 0.0001 - 0.00005).toFixed(6)),
+                        longitude: parseFloat((state.lon + Math.random() * 0.0001 - 0.00005).toFixed(6)),
+                        speed: parseFloat((10 + Math.random() * 5).toFixed(2)),
+                        battery_level: parseInt(Math.max(0, state.bat - 1))
+                    }
+                };
+
+                const res = await fetch(`http://localhost:${port}/telemetry`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    addLog(deviceId, `Telemetry recorded locally. Alt: ${payload.payload.altitude}m, Battery: ${payload.payload.battery_level}%`, 'info');
+                    fetchDroneStatus(deviceId, port);
+                } else {
+                    addLog(deviceId, `Failed to write telemetry.`, 'error');
+                }
+            } catch (err) {
+                addLog(deviceId, `Error writing telemetry. Edge node port ${port} unreachable.`, 'error');
+            }
+        }
+
+        // Flight automation loop
+        function toggleFlight(deviceId, port) {
+            const card = document.getElementById(`card-${deviceId}`);
+            const btn = document.getElementById(`fly-${deviceId}`);
+            const state = flightStates[deviceId];
+
+            if (state.active) {
+                // Land / Stop flight
+                state.active = false;
+                clearInterval(state.timer);
+                state.timer = null;
+                btn.textContent = 'Fly Drone';
+                btn.className = 'btn btn-primary';
+                card.className = 'drone-card';
+                addLog(deviceId, `Drone landing sequence initiated...`, 'warn');
+                
+                // Animate landing down to 0
+                let landTimer = setInterval(async () => {
+                    state.alt = Math.max(0, state.alt - 10);
+                    state.speed = Math.max(0, state.speed - 3);
+                    if (state.alt === 0) {
+                        clearInterval(landTimer);
+                        addLog(deviceId, `Drone successfully landed.`, 'warn');
+                    }
+                }, 500);
+            } else {
+                // Take off
+                state.active = true;
+                state.alt = 10; // Start altitude
+                state.speed = 5;
+                state.bat = 100;
+                btn.textContent = 'Land Drone';
+                btn.className = 'btn btn-danger';
+                card.className = 'drone-card flying active-border';
+                addLog(deviceId, `Takeoff! Drone in flight simulation.`, 'success');
+
+                state.timer = setInterval(async () => {
+                    // Update flight simulation variables
+                    if (state.alt < 100) {
+                        state.alt += parseFloat((Math.random() * 8).toFixed(1)); // Climb
+                    } else {
+                        state.alt += parseFloat((Math.random() * 4 - 2).toFixed(1)); // Cruise
+                    }
+                    
+                    state.speed = parseFloat((12 + Math.random() * 6).toFixed(1));
+                    state.bat = Math.max(0, state.bat - 0.2); // Slowly drain battery
+
+                    // Move coordinate slightly along heading
+                    const rad = (state.heading * Math.PI) / 180;
+                    state.lat += 0.00004 * Math.sin(rad) + (Math.random() * 0.00001 - 0.000005);
+                    state.lon += 0.00004 * Math.cos(rad) + (Math.random() * 0.00001 - 0.000005);
+                    state.heading += (Math.random() * 10 - 5); // drift heading
+
+                    const now = Date.now() * 1000000;
+                    const payload = {
+                        device_name: deviceId,
+                        record_type_id: 1,
+                        timestamp_ns: String(now),
+                        payload: {
+                            altitude: parseFloat(state.alt.toFixed(1)),
+                            latitude: parseFloat(state.lat.toFixed(6)),
+                            longitude: parseFloat(state.lon.toFixed(6)),
+                            speed: parseFloat(state.speed.toFixed(1)),
+                            battery_level: parseInt(Math.ceil(state.bat))
+                        }
+                    };
+
+                    try {
+                        const res = await fetch(`http://localhost:${port}/telemetry`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        
+                        if (res.ok) {
+                            fetchDroneStatus(deviceId, port);
+                        }
+                    } catch (err) {
+                        addLog(deviceId, `Flight status update failed: Edge server unreachable.`, 'error');
+                    }
+
+                }, 1500);
+            }
+        }
+
+        // Reset all databases
+        async function resetSimulation() {
+            if (!confirm('Are you sure you want to clear all cloud and edge databases?')) return;
+
+            addLog('system', 'Wiping all telemetry databases...', 'warn');
+
+            // Wipe cloud server
+            try {
+                await fetch('/api/cloud/telemetry', { method: 'DELETE' });
+                addLog('cloud', 'Cloud database wiped.', 'success');
+            } catch (e) {
+                addLog('cloud', 'Failed to wipe cloud database.', 'error');
+            }
+
+            // Wipe each drone
+            for (const deviceId in DRONE_PORTS) {
+                const port = DRONE_PORTS[deviceId];
+                try {
+                    await fetch(`http://localhost:${port}/telemetry`, { method: 'DELETE' });
+                    addLog(deviceId, 'Local database wiped.', 'success');
+                    
+                    // Reset local stats
+                    document.getElementById(`queue-${deviceId}`).textContent = '0';
+                    document.getElementById(`sync-${deviceId}`).textContent = 'Never';
+                    
+                    const state = flightStates[deviceId];
+                    state.alt = 0;
+                    state.bat = 100;
+                } catch (e) {
+                    addLog(deviceId, `Failed to wipe database at port ${port}.`, 'error');
+                }
+            }
+
+            // Reset chart
+            telemetryChart.data.labels = [];
+            telemetryChart.data.datasets.forEach(ds => ds.data = []);
+            telemetryChart.update();
+        }
+
+        // Polling loop
+        function pollDevices() {
+            for (const deviceId in DRONE_PORTS) {
+                fetchDroneStatus(deviceId, DRONE_PORTS[deviceId]);
+            }
+        }
+
+        // Chart setup
+        const ctx = document.getElementById('telemetryChart').getContext('2d');
+        const telemetryChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [], // Timestamps
+                datasets: [
+                    {
+                        label: 'Drone-01',
+                        borderColor: '#6366f1',
+                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                        data: [],
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 2
+                    },
+                    {
+                        label: 'Drone-02',
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        data: [],
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 2
+                    },
+                    {
+                        label: 'Drone-03',
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        data: [],
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        ticks: { color: '#9ca3af', font: { family: 'Outfit' } }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        ticks: { color: '#9ca3af', font: { family: 'Outfit' } }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: { color: '#f3f4f6', font: { family: 'Outfit' } }
+                    }
+                }
+            }
+        });
+
+        let lastFetchedCloudRecordTs = '0';
+        let activeMetric = 'altitude';
+
+        function updateChartMetric() {
+            activeMetric = document.getElementById('chart-metric').value;
+            // Clear current chart data and reload from scratch
+            telemetryChart.data.labels = [];
+            telemetryChart.data.datasets.forEach(ds => ds.data = []);
+            lastFetchedCloudRecordTs = '0';
+            pollCloudTelemetry();
+        }
+
+        // Poll cloud telemetry to update analytics graph
+        async function pollCloudTelemetry() {
+            try {
+                const res = await fetch('/api/cloud/telemetry?limit=80');
+                if (!res.ok) return;
+                const records = await res.json();
+                if (records.length === 0) return;
+
+                // Sort records oldest first to plot in sequence
+                records.sort((a, b) => {
+                    const diff = BigInt(a.timestamp_ns) - BigInt(b.timestamp_ns);
+                    return diff > 0n ? 1 : (diff < 0n ? -1 : 0);
+                });
+
+                // Check if we have new records
+                const latestTs = records[records.length - 1].timestamp_ns;
+                if (latestTs === lastFetchedCloudRecordTs) return;
+
+                // We have updates, clear and rebuild to keep it simple and clean
+                const chartLabels = [];
+                const datasetData = {
+                    'drone-01': [],
+                    'drone-02': [],
+                    'drone-03': []
+                };
+
+                records.forEach(rec => {
+                    const date = new Date(Number(BigInt(rec.timestamp_ns) / 1000000n));
+                    const timeLabel = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    
+                    chartLabels.push(timeLabel);
+                    
+                    const val = rec.payload ? rec.payload[activeMetric] : null;
+                    datasetData[rec.device_id].push({
+                        x: timeLabel,
+                        y: val
+                    });
+
+                    // Log new sync arrivals to the feed
+                    if (BigInt(rec.timestamp_ns) > BigInt(lastFetchedCloudRecordTs)) {
+                        addLog(rec.device_id, `Cloud ingested synced telemetry batch point. ${activeMetric.toUpperCase()}: ${val}`, 'success');
+                    }
+                });
+
+                lastFetchedCloudRecordTs = latestTs;
+
+                // Limit labels to keep graph clean
+                telemetryChart.data.labels = chartLabels;
+                telemetryChart.data.datasets[0].data = datasetData['drone-01'];
+                telemetryChart.data.datasets[1].data = datasetData['drone-02'];
+                telemetryChart.data.datasets[2].data = datasetData['drone-03'];
+                
+                telemetryChart.update('none'); // Update without full layout animation to keep it smooth
+            } catch (err) {
+                console.error('Error fetching cloud telemetry:', err);
+            }
+        }
+
+        // Initialize polling intervals
+        setInterval(pollDevices, 1000);
+        setInterval(pollCloudTelemetry, 1500);
+
+        // Run initial load
+        pollDevices();
+        pollCloudTelemetry();
+    </script>
+</body>
+</html>
