@@ -90,3 +90,6 @@ server/node_modules/
 # EdgeStorage database data
 data/
 server/data/
+
+# Temporary directories
+/tmp/
