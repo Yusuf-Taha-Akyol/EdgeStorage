@@ -35,6 +35,15 @@ target_link_libraries(edgestorage_example
     PRIVATE edgestorage
 )
 
+add_executable(edgestorage_server_backend
+    src/api/server_backend.c
+)
+
+target_link_libraries(edgestorage_server_backend
+    PRIVATE edgestorage
+)
+
+
 enable_testing()
 
 add_executable(edgestorage_smoke_test

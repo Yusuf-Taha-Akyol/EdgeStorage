@@ -82,3 +82,11 @@ benchmark_compressed_testdata/
 
 # Generated benchmark/demo outputs
 demo_output/
+
+# Node.js dependencies
+node_modules/
+server/node_modules/
+
+# EdgeStorage database data
+data/
+server/data/
